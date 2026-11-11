@@ -53,15 +53,21 @@ public final class CaveWorldAudit implements ModInitializer {
   Path coordinates=Path.of(System.getenv("FG_CAVE_COORDINATES"));List<Window> windows;
   if(Files.exists(coordinates))windows=Arrays.asList(G.fromJson(Files.readString(coordinates),Window[].class));
   else{windows=normal?List.of(new Window("normal-control",0,0,0)):select();Files.writeString(coordinates,G.toJson(windows)+"\n");}
+  // Capture all available TERRAIN chunks before any FULL request in these windows.
+  // Reload tests do not pretend that already decorated chunks are pre-feature samples.
+  JsonArray terrainStage=new JsonArray();boolean reload="candidate-reload".equals(System.getenv("FG_CAVE_PASS"));
+  if(!normal&&!reload)for(Window w:windows)
+   terrainStage.add(CaveTerrainSnapshot.capture(level,w.label(),w.x(),w.z(),64,this::h));
   JsonArray regions=new JsonArray();for(Window w:windows){var region=scan(w);regions.add(region);
    System.out.println("CAVE_AUDIT_STAGE seed="+level.getSeed()+" label="+w.label()+" x="+w.x()+" z="+w.z()+" open="+region.get("dry_opening_columns"));}
   JsonObject out=new JsonObject();out.addProperty("completed",true);out.addProperty("source_commit",System.getenv("FG_CAVE_SOURCE"));
   out.addProperty("seed",level.getSeed());out.addProperty("settings",expected);out.addProperty("structures_enabled",false);
-  out.addProperty("mode",System.getenv("FG_CAVE_MODE"));out.addProperty("full_chunks_requested",chunks.size());out.add("regions",regions);
+  out.addProperty("mode",System.getenv("FG_CAVE_MODE"));out.addProperty("pass",System.getenv("FG_CAVE_PASS"));
+  out.add("pre_feature_terrain",terrainStage);out.addProperty("full_chunks_requested",chunks.size());out.add("regions",regions);
   out.addProperty("native_policy_checks",nativeChecks);out.addProperty("min_sampled_gate",minGate);out.addProperty("max_sampled_gate",maxGate);
   try{var t=Class.forName("dev.freshgenerator.cave.CaveTelemetry");out.add("telemetry",G.toJsonTree(t.getMethod("snapshot").invoke(null)));}
   catch(ClassNotFoundException e){if(candidate)throw e;}
-  out.addProperty("scope","paired finite FULL windows, bounded vertical opening-area proxy; not all lateral entrances, cave accessibility or client visuals");
+  out.addProperty("scope","paired finite TERRAIN and FULL windows, bounded vertical opening-area proxy; not all lateral entrances, cave accessibility or client visuals");
   Files.writeString(Path.of("cave-audit.json"),G.toJson(out)+"\n");System.out.println("FRESHGENERATOR_CAVE_WORLD_PASS seed="+level.getSeed()+" windows="+windows.size());
  }
  private List<Window> select(){

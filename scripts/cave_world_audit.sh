@@ -12,7 +12,9 @@ export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -XX:ActiveProcessorCount=1 -Dma
 for mode in reference candidate;do
  source=$reference;[ "$mode" = candidate ]&&source=$candidate
  tree="$scratch/$mode";git worktree add --detach "$tree" "$source"
- cp "$root/src/audit/java/dev/freshgenerator/audit/CaveWorldAudit.java" "$tree/src/audit/java/dev/freshgenerator/audit/CaveWorldAudit.java"
+ for observer in CaveWorldAudit CaveTerrainSnapshot;do
+  cp "$root/src/audit/java/dev/freshgenerator/audit/$observer.java" "$tree/src/audit/java/dev/freshgenerator/audit/$observer.java"
+ done
  python3 - "$tree/src/audit/resources/fabric.mod.json" <<'PY'
 import json,pathlib,sys
 p=pathlib.Path(sys.argv[1]);j=json.loads(p.read_text());j['entrypoints']['main']=['dev.freshgenerator.audit.CaveWorldAudit'];p.write_text(json.dumps(j,indent=2)+'\n')
@@ -36,9 +38,9 @@ EOF
  for ((i=1;i<=passes;i++));do
   label=$mode;[ "$i" = 2 ]&&label=candidate-reload
   log="$report/$label.log"
-  if ! (cd "$tree";FRESHGENERATOR_AUDIT=true FG_AUDIT_RUN_DIR="$run" FG_CAVE_AUDIT=true FG_CAVE_MODE="$mode" FG_CAVE_SCOPE="$scope" FG_CAVE_SOURCE="$source" FG_CAVE_COORDINATES="$report/coordinates.json" \
+  if ! (cd "$tree";FRESHGENERATOR_AUDIT=true FG_AUDIT_RUN_DIR="$run" FG_CAVE_AUDIT=true FG_CAVE_MODE="$mode" FG_CAVE_PASS="$label" FG_CAVE_SCOPE="$scope" FG_CAVE_SOURCE="$source" FG_CAVE_COORDINATES="$report/coordinates.json" \
     timeout --signal=QUIT --kill-after=15s 1200s gradle --no-daemon --console=plain runServer > "$log" 2>&1);then tail -n 160 "$log";exit 1;fi
-  grep 'CAVE_AUDIT_STAGE\|FRESHGENERATOR_CAVE_WORLD_PASS' "$log"
+  grep 'CAVE_TERRAIN_STAGE\|CAVE_AUDIT_STAGE\|FRESHGENERATOR_CAVE_WORLD_PASS' "$log"
   cp "$run/cave-audit.json" "$report/$label.json"
  done
  git -C "$tree" diff --exit-code -- src/main src/core src/tool
