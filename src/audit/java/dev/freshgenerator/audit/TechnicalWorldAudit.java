@@ -18,12 +18,12 @@ import net.minecraft.world.level.levelgen.structure.*;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 import java.io.*;
+import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.*;
 
-/** Read-only observer of isolated CI worlds. This source set is excluded from the installable JAR. */
+/** Read-only observer of isolated CI worlds. Excluded from the installable JAR. */
 public final class TechnicalWorldAudit implements ModInitializer {
     private static final Gson GSON=new GsonBuilder().setPrettyPrinting().create();
     private static final Set<String> NATURAL=Set.of("stone","deepslate","andesite","diorite","granite",
@@ -58,6 +58,29 @@ public final class TechnicalWorldAudit implements ModInitializer {
             }
         });
     }
+    /* Test-only reflection against actual runtime objects, never guessed values or API stubs.
+       Fail closed if native options/packed-position accessors cannot be identified. */
+    private static boolean structuresEnabled(MinecraftServer server) throws ReflectiveOperationException {
+        Object data=server.getWorldData();
+        for(Method m:data.getClass().getMethods()) {
+            if(m.getParameterCount()!=0)continue;
+            String type=m.getReturnType().getSimpleName();
+            if(type.equals("WorldOptions")||type.equals("WorldGenOptions")) {
+                Object options=m.invoke(data);
+                return (boolean)options.getClass().getMethod("generateStructures").invoke(options);
+            }
+        }
+        throw new IllegalStateException("No native world-options accessor: "+Arrays.toString(data.getClass().getMethods()));
+    }
+    private static ChunkPos unpack(long packed) {
+        try {
+            for(Method m:ChunkPos.class.getDeclaredMethods())
+                if(Modifier.isPublic(m.getModifiers())&&Modifier.isStatic(m.getModifiers())
+                    &&m.getReturnType()==ChunkPos.class&&Arrays.equals(m.getParameterTypes(),new Class<?>[]{long.class}))
+                    return (ChunkPos)m.invoke(null,packed);
+        }catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
+        throw new IllegalStateException("No native ChunkPos unpack accessor: "+Arrays.toString(ChunkPos.class.getDeclaredMethods()));
+    }
     private void run(MinecraftServer server) throws Exception {
         level=server.overworld();
         if(!(level.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator g))throw new AssertionError("Not native noise generator");
@@ -67,16 +90,13 @@ public final class TechnicalWorldAudit implements ModInitializer {
         if(!actual.contains(expected))throw new AssertionError("World preset silently fell back: "+actual);
         report.addProperty("case",System.getenv("FG_AUDIT_CASE"));report.addProperty("seed",level.getSeed());
         report.addProperty("settings",actual);
-        report.addProperty("structure_generation_enabled",server.getWorldData().worldGenOptions().generateStructures());
-        if(!server.getWorldData().worldGenOptions().generateStructures())throw new AssertionError("Structures disabled");
+        boolean enabled=structuresEnabled(server);report.addProperty("structure_generation_enabled",enabled);
+        if(!enabled)throw new AssertionError("Structures disabled");
         state=RandomState.create(server.registryAccess().lookupOrThrow(Registries.NOISE),level.getSeed(),g.generatorSettings().value());
-        verifyNativePlacementRules(server);
-        verifySpawn();
-        JsonArray regions=new JsonArray();
-        BlockPos spawn=level.getRespawnData().pos();
+        verifyNativePlacementRules(server);verifySpawn();
+        JsonArray regions=new JsonArray();BlockPos spawn=level.getRespawnData().pos();
         regions.add(scanRegion("spawn",Math.floorDiv(spawn.getX(),16),Math.floorDiv(spawn.getZ(),16),3));
         regions.add(scanRegion("positive-negative-chunk-seams",0,0,3));
-        // Matched geographic coordinates in FreshGenerator and vanilla, selected from the same FG seed.
         var fgSettings=server.registryAccess().lookupOrThrow(Registries.NOISE_SETTINGS).getOrThrow(
             ResourceKey.create(Registries.NOISE_SETTINGS,Identifier.parse("freshgenerator:highlands_v2"))).value();
         var fgState=RandomState.create(server.registryAccess().lookupOrThrow(Registries.NOISE),level.getSeed(),fgSettings);
@@ -150,7 +170,7 @@ public final class TechnicalWorldAudit implements ModInitializer {
         r.add("definitions",definitions);report.add("placement_rules",r);
         System.out.println("AUDIT_STAGE placement rules "+structureCount+" structures, "+positions+" candidates");
     }
-    private void full(int cx,int cz){level.getChunk(cx,cz);requestedFullChunks.add(ChunkPos.asLong(cx,cz));}
+    private void full(int cx,int cz){level.getChunk(cx,cz);requestedFullChunks.add(((long)cx<<32)|(cz&0xffffffffL));}
     private static String blockId(BlockState s){return BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString();}
     private byte classify(BlockState s){return classification.computeIfAbsent(s,b->{
         if(b.isAir()||(!b.isSolid()&&!b.getFluidState().isEmpty()))return (byte)0;
@@ -177,14 +197,13 @@ public final class TechnicalWorldAudit implements ModInitializer {
     private boolean passable(BlockPos p){var b=level.getBlockState(p);return b.getFluidState().isEmpty()&&b.getCollisionShape(level,p).isEmpty();}
     private JsonObject scanRegion(String label,int cx,int cz,int side){
         int half=side/2,minCX=cx-half,minCZ=cz-half,width=side*16,depth=width,minY=48,height=272;
-        // FULL halo first: no implicit missing neighbour is ever treated as air.
         for(int x=minCX-1;x<=minCX+side;x++)for(int z=minCZ-1;z<=minCZ+side;z++)full(x,z);
         Set<BoundingBox> protectedBoxes=new HashSet<>();
         for(int x=minCX;x<minCX+side;x++)for(int z=minCZ;z<minCZ+side;z++) {
             var chunk=level.getChunk(x,z);
             chunk.getAllStarts().values().stream().filter(StructureStart::isValid).forEach(s->s.getPieces().forEach(p->protectedBoxes.add(p.getBoundingBox())));
             for(var entry:chunk.getAllReferences().entrySet())for(long key:entry.getValue()) {
-                ChunkPos pos=new ChunkPos(key);var root=level.getChunk(pos.x,pos.z,ChunkStatus.STRUCTURE_STARTS);
+                ChunkPos pos=unpack(key);var root=level.getChunk(pos.x(),pos.z(),ChunkStatus.STRUCTURE_STARTS);
                 var start=root.getStartForStructure(entry.getKey());
                 if(start!=null&&start.isValid())start.getPieces().forEach(p->protectedBoxes.add(p.getBoundingBox()));
             }
@@ -207,8 +226,7 @@ public final class TechnicalWorldAudit implements ModInitializer {
             sky++;naturalBlocks+=c.naturalBlocks();if(c.blocks()==1)singletons++;
             JsonObject q=new JsonObject();q.addProperty("component_blocks",c.blocks());q.addProperty("natural_blocks",c.naturalBlocks());
             q.add("min",GSON.toJsonTree(List.of(minCX*16+c.minX(),minY+c.minY(),minCZ*16+c.minZ())));
-            q.add("max",GSON.toJsonTree(List.of(minCX*16+c.maxX(),minY+c.maxY(),minCZ*16+c.maxZ())));
-            candidates.add(q);
+            q.add("max",GSON.toJsonTree(List.of(minCX*16+c.maxX(),minY+c.maxY(),minCZ*16+c.maxZ())));candidates.add(q);
         }
         JsonObject r=new JsonObject();r.addProperty("label",label);r.addProperty("min_chunk_x",minCX);r.addProperty("min_chunk_z",minCZ);
         r.addProperty("full_chunks_scanned",side*side);r.addProperty("scanned_block_positions",cells.length);
@@ -224,40 +242,36 @@ public final class TechnicalWorldAudit implements ModInitializer {
             min=Math.min(min,h);max=Math.max(max,h);heights.add(h);
             biomes.add(id(level.getUncachedNoiseBiome(Math.floorDiv(wx,4),Math.floorDiv(h,4),Math.floorDiv(wz,4))));
         }
-        r.addProperty("height_columns",81);r.addProperty("min_base_height",min);r.addProperty("max_base_height",max);r.addProperty("distinct_base_heights",heights.size());
-        r.add("sample_biomes",GSON.toJsonTree(biomes));
+        r.addProperty("height_columns",81);r.addProperty("min_base_height",min);r.addProperty("max_base_height",max);r.addProperty("distinct_base_heights",heights.size());r.add("sample_biomes",GSON.toJsonTree(biomes));
         if(sky>0)warnings.add(label+": "+sky+" sky-exposed detached natural components; inspect coordinates, no automatic deletion");
-        System.out.println("AUDIT_STAGE region "+label+" detached="+sky+" singletons="+singletons+" min="+min+" max="+max);
-        return r;
+        System.out.println("AUDIT_STAGE region "+label+" detached="+sky+" singletons="+singletons+" min="+min+" max="+max);return r;
     }
     private void inspectNearest(MinecraftServer server,List<String> names,int x,int z,boolean required,Set<String> inspected,JsonArray out){
-        var registry=server.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-        List<Holder<Structure>> holders=new ArrayList<>();
+        var registry=server.registryAccess().lookupOrThrow(Registries.STRUCTURE);List<Holder<Structure>> holders=new ArrayList<>();
         for(String name:names)holders.add(registry.getOrThrow(ResourceKey.create(Registries.STRUCTURE,Identifier.parse("minecraft:"+name))));
         var found=generator.findNearestMapStructure(level,HolderSet.direct(holders),new BlockPos(x,64,z),16,false);
         if(found==null){if(required)throw new AssertionError("Required structure not located: "+names);warnings.add("Not located in bounded search: "+names);return;}
-        String name=id(found.getSecond());Structure structure=found.getSecond().value();ChunkPos at=new ChunkPos(found.getFirst());
-        StructureStart start=level.getChunk(at.x,at.z,ChunkStatus.STRUCTURE_STARTS).getStartForStructure(structure);
+        String name=id(found.getSecond());Structure structure=found.getSecond().value();
+        ChunkPos at=new ChunkPos(Math.floorDiv(found.getFirst().getX(),16),Math.floorDiv(found.getFirst().getZ(),16));
+        StructureStart start=level.getChunk(at.x(),at.z(),ChunkStatus.STRUCTURE_STARTS).getStartForStructure(structure);
         if(start==null||!start.isValid()||start.getPieces().isEmpty())throw new AssertionError("Locate gave missing structure start: "+name);
-        String unique=name+"@"+start.getChunkPos();if(!inspected.add(unique))return;
-        BoundingBox box=start.getBoundingBox();
+        String unique=name+"@"+start.getChunkPos();if(!inspected.add(unique))return;BoundingBox box=start.getBoundingBox();
         int minCX=Math.floorDiv(box.minX(),16)-1,minCZ=Math.floorDiv(box.minZ(),16)-1;
         int maxCX=Math.floorDiv(box.maxX(),16)+1,maxCZ=Math.floorDiv(box.maxZ(),16)+1;
         int footprint=(maxCX-minCX+1)*(maxCZ-minCZ+1);
         if(footprint>625)throw new AssertionError("Structure exceeds explicit audit budget: "+name+" "+footprint);
         for(int cx=minCX;cx<=maxCX;cx++)for(int cz=minCZ;cz<=maxCZ;cz++)full(cx,cz);
-        int validPositions=0;
-        JsonArray placements=new JsonArray();
+        int validPositions=0;JsonArray placements=new JsonArray();
         for(var entry:sets.entrySet()){
             if(entry.getValue().structures().stream().noneMatch(e->e.structure().value()==structure))continue;
             if(entry.getValue().placement() instanceof RandomSpreadStructurePlacement p){
-                boolean match=p.getPotentialStructureChunk(level.getSeed(),start.getChunkPos().x,start.getChunkPos().z).equals(start.getChunkPos());
+                boolean match=p.getPotentialStructureChunk(level.getSeed(),start.getChunkPos().x(),start.getChunkPos().z()).equals(start.getChunkPos());
                 if(!match)throw new AssertionError("Start violates placement candidate: "+unique);
                 validPositions++;placements.add(entry.getKey());
             }else placements.add(entry.getKey()+" (non-random-spread; codec rules checked)");
         }
         if(placements.isEmpty())throw new AssertionError("No structure set for "+name);
-        JsonObject r=new JsonObject();r.addProperty("id",name);r.add("start_chunk",GSON.toJsonTree(List.of(start.getChunkPos().x,start.getChunkPos().z)));
+        JsonObject r=new JsonObject();r.addProperty("id",name);r.add("start_chunk",GSON.toJsonTree(List.of(start.getChunkPos().x(),start.getChunkPos().z())));
         r.add("bounds",GSON.toJsonTree(List.of(box.minX(),box.minY(),box.minZ(),box.maxX(),box.maxY(),box.maxZ())));
         r.addProperty("pieces",start.getPieces().size());r.addProperty("full_footprint_chunks",footprint);r.add("placement_sets",placements);
         r.addProperty("random_spread_start_positions_verified",validPositions);r.addProperty("terrain_adaptation",structure.terrainAdaptation().toString());
@@ -268,8 +282,7 @@ public final class TechnicalWorldAudit implements ModInitializer {
         }
         r.addProperty("piece_locator_biome_samples_allowed",eligible);r.add("piece_locator_biomes",GSON.toJsonTree(biomeSamples));
         r.addProperty("biome_check_scope","native selector/rules retained; piece locators are observations, not the original generation stub");
-        if(name.contains("village_"))r.add("village_support",inspectVillage(start));
-        out.add(r);
+        if(name.contains("village_"))r.add("village_support",inspectVillage(start));out.add(r);
         System.out.println("AUDIT_STAGE structure "+unique+" pieces="+start.getPieces().size()+" footprint="+footprint);
     }
     private JsonObject inspectVillage(StructureStart start){
@@ -277,16 +290,14 @@ public final class TechnicalWorldAudit implements ModInitializer {
         Set<Long> checkedDoors=new HashSet<>(),checkedBeds=new HashSet<>();
         for(var piece:start.getPieces()){
             if(!(piece instanceof PoolElementStructurePiece pool)||pool.getElement().getProjection()!=StructureTemplatePool.Projection.RIGID)continue;
-            BoundingBox box=piece.getBoundingBox();
-            int pieceCols=0,deep=0,maxGap=0;
+            BoundingBox box=piece.getBoundingBox();int pieceCols=0,deep=0,maxGap=0;
             int floorTop=Math.min(box.maxY(),box.minY()+Math.max(4,pool.getGroundLevelDelta()+2));
             for(int x=box.minX();x<=box.maxX();x++)for(int z=box.minZ();z<=box.maxZ();z++){
                 int lowest=-1;
                 for(int y=Math.max(-64,box.minY());y<=Math.min(319,floorTop);y++){
                     var s=level.getBlockState(new BlockPos(x,y,z));if(s.isSolid()){lowest=y;break;}
                 }
-                if(lowest<0)continue;
-                int gap=0;
+                if(lowest<0)continue;int gap=0;
                 for(int y=lowest-1;y>=-64&&gap<=32;y--){var b=level.getBlockState(new BlockPos(x,y,z));if(b.isSolid()||!b.getFluidState().isEmpty())break;gap++;}
                 pieceCols++;if(gap>8)deep++;maxGap=Math.max(maxGap,gap);
             }
@@ -295,8 +306,7 @@ public final class TechnicalWorldAudit implements ModInitializer {
                 if(name.endsWith("_bed")&&checkedBeds.add(p.asLong()))bedBlocks++;
                 if(name.endsWith("_door")&&b.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)
                     &&b.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF)==DoubleBlockHalf.LOWER&&checkedDoors.add(p.asLong())){
-                    doors++;Direction f=b.getValue(BlockStateProperties.HORIZONTAL_FACING);
-                    boolean exit=false;
+                    doors++;Direction f=b.getValue(BlockStateProperties.HORIZONTAL_FACING);boolean exit=false;
                     for(Direction d:List.of(f,f.getOpposite()))for(int step=-1;step<=1;step++){
                         BlockPos q=p.relative(d).offset(0,step,0);
                         if(passable(q)&&passable(q.above())&&level.getBlockState(q.below()).isFaceSturdy(level,q.below(),Direction.UP))exit=true;
@@ -304,15 +314,13 @@ public final class TechnicalWorldAudit implements ModInitializer {
                     if(!exit)blockedDoors++;
                 }
             }
-            rigid++;columns+=pieceCols;largeGaps+=deep;
-            boolean suspended=pieceCols>=4&&deep==pieceCols;if(suspended)suspendedPieces++;
+            rigid++;columns+=pieceCols;largeGaps+=deep;boolean suspended=pieceCols>=4&&deep==pieceCols;if(suspended)suspendedPieces++;
             if(deep>0||suspended){JsonObject p=new JsonObject();p.add("bounds",GSON.toJsonTree(List.of(box.minX(),box.minY(),box.minZ(),box.maxX(),box.maxY(),box.maxZ())));p.addProperty("floor_columns",pieceCols);p.addProperty("air_gaps_over_8",deep);p.addProperty("max_air_gap",maxGap);p.addProperty("all_sampled_columns_over_void",suspended);pieces.add(p);}
         }
         JsonObject r=new JsonObject();r.addProperty("rigid_pieces_checked",rigid);r.addProperty("solid_floor_columns_checked",columns);
         r.addProperty("floor_columns_with_air_gap_over_8",largeGaps);r.addProperty("all_columns_over_void_piece_candidates",suspendedPieces);
         r.addProperty("doors_checked",doors);r.addProperty("doors_without_local_supported_exit",blockedDoors);r.addProperty("bed_blocks",bedBlocks);r.add("piece_warnings",pieces);
         r.addProperty("scope","geometric floor/door screening; overhangs and terrain-matching roads are not declared broken; no villager navigation simulation");
-        if(suspendedPieces>0||blockedDoors>0)warnings.add("Village "+start.getChunkPos()+": suspended-piece candidates="+suspendedPieces+", locally blocked door candidates="+blockedDoors);
-        return r;
+        if(suspendedPieces>0||blockedDoors>0)warnings.add("Village "+start.getChunkPos()+": suspended-piece candidates="+suspendedPieces+", locally blocked door candidates="+blockedDoors);return r;
     }
 }
