@@ -1,0 +1,26 @@
+name: Collect empirical forest reference measurements
+on:
+  workflow_dispatch:
+  push:
+    paths: ['scripts/forest_reference_data.*', '.github/workflows/forest-research.yml']
+permissions:
+  contents: write
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install research-only R runtime when absent
+        run: |
+          if ! command -v Rscript >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends r-base-core; fi
+      - name: Measure pinned public datasets, do not distribute raw records
+        run: python3 scripts/forest_reference_data.py
+      - name: Record aggregate evidence and source hashes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/forest-reference-statistics.json
+          git commit -m 'research: record measured forest point-pattern aggregates and limitations [skip ci]'
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
