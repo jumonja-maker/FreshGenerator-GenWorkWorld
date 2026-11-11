@@ -1,17 +1,17 @@
-name: Build generation core
+name: Build and validate generator core
 on:
   push:
     paths-ignore: ['dist/**']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: core-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 28
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
@@ -22,11 +22,14 @@ jobs:
         with:
           gradle-version: '9.8.2'
           cache-disabled: true
-      - name: Compile generator graphs and test actual Minecraft data
+      - name: Compile generation graphs and test actual Minecraft data
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon --console=plain clean apiProbe build 2>&1 | tee build-validation.log
+          gradle --no-daemon --console=plain clean build 2>&1 | tee build-validation.log
+      - name: Actual world generation, two profiles, two seeds, save and reload
+        shell: bash
+        run: bash scripts/world_smoke.sh
       - name: Print failed tests
         if: failure()
         run: |
@@ -38,3 +41,16 @@ jobs:
                   for f in c.findall('failure')+c.findall('error'):
                       print(p.name,c.get('name'),f.get('message'),(f.text or '')[:5000])
           PY
+      - name: Validate distributable and write evidence
+        run: python3 scripts/validate_release.py
+      - name: Publish tested alpha and source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: publish core alpha with real-world validation evidence [skip ci]'
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi

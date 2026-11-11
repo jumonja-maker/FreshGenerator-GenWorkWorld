@@ -51,7 +51,8 @@ processResources {
 java { sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25; withSourcesJar() }
 tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
 jar { from sourceSets.core.output }
-sourcesJar { dependsOn generateWorldgen; from sourceSets.core.allSource; from sourceSets.tool.allSource }
+// Loom already includes the core source set through mods.freshgenerator.
+sourcesJar { dependsOn generateWorldgen; from sourceSets.tool.allSource }
 test {
     dependsOn toolClasses
     useJUnitPlatform()
