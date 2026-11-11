@@ -1,4 +1,4 @@
-"""Publish only after unit tests and all real, isolated server scenarios passed."""
+"""Publish only after unit tests, all server scenarios and a historical-source A/B passed."""
 import hashlib,json,os,shutil,zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -38,24 +38,28 @@ assert suites and all(int(s.get(k,0))==0 for s in suites for k in ['errors','fai
 total=sum(int(s.get('tests',0)) for s in suites); assert total>=49
 labels=['balanced-new','balanced-reload','other-seed','highlands-new','natural-new','natural-other-seed','alpine-new','alpine-reload']
 reports={}
+p=Path('build/reports/integration')
 for label in labels:
-    p=Path('build/reports/integration')
     assert 'FRESHGENERATOR_WORLD_PASS' in (p/f'{label}.log').read_text()
     reports[label]=json.loads((p/f'{label}.json').read_text())
 old_report=json.loads(Path('dist/validation-0.1.0-alpha.1.json').read_text())
 for label in labels[:4]:
-    for key in ['block_sha256','climate_sha256']:
-        assert reports[label][key]==old_report['world_scenarios'][label][key]
+    assert reports[label]['climate_sha256']==old_report['world_scenarios'][label]['climate_sha256']
 for key in ['block_sha256','climate_sha256']:
     assert reports['alpine-new'][key]==reports['alpine-reload'][key]
 for label in labels[4:]:
     r=reports[label];assert r['core_vs_native_max_error']<=.02 and r['unchanged_climate_axis_samples']==2560
     assert r['full_chunks_checked']>=9 and r['distinct_base_heights']>=3
+legacy_audit=json.loads((p/'legacy-comparison.json').read_text())
+assert legacy_audit['full_block_differences']==0 and legacy_audit['full_blocks_compared']==491520
+assert legacy_audit['base_height_columns_equal']==1280
 report={
     'version':version,'source_commit':os.environ['GITHUB_SHA'],
     'run_url':f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-    'unit_tests_passed':total,'actual_dedicated_server_runs':len(reports),
-    'legacy_v1_resources_unchanged':legacy,'legacy_v1_full_chunk_hashes':'matched published alpha.1',
+    'unit_tests_passed':total,'actual_dedicated_server_runs':len(reports)+1,
+    'legacy_v1_resources_unchanged':legacy,
+    'historical_full_chunk_hash_comparison':json.loads((p/'historical-v1-comparison.json').read_text()),
+    'legacy_historical_source_AB':legacy_audit,
     'v2_save_reload_full_chunks':'passed','v2_core_vs_native_graph':'passed',
     'climate_axes_vs_v1':'2560 identical sampled values per v2 run; not a global rarity proof',
     'native_heightmaps':'289 columns near a sampled mountain per v2 run',

@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "name": "FreshGenerator test harness — never install",
   "environment": "server",
-  "entrypoints": {"main": ["dev.freshgenerator.smoke.WorldSmoke"]},
+  "entrypoints": {"main": ["dev.freshgenerator.smoke.LegacyBlockAudit", "dev.freshgenerator.smoke.WorldSmoke"]},
   "depends": {"freshgenerator": "*", "fabric-api": "*"}
 }
