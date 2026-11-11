@@ -23,7 +23,10 @@ class NaturalCompilerTest {
                 for(var f:files.entrySet()) {
                     var entry=zip.getEntry(f.getKey());assertNotNull(entry,f.getKey());
                     try(var in=zip.getInputStream(entry)) {
-                        assertEquals(JsonParser.parseString(new String(in.readAllBytes(),StandardCharsets.UTF_8)),f.getValue(),f.getKey());
+                        // Compare serialized registry data on both sides. Gson's in-memory Float
+                        // numbers and parsed decimal numbers need not compare equal before encoding.
+                        assertEquals(JsonParser.parseString(new String(in.readAllBytes(),StandardCharsets.UTF_8)),
+                                JsonParser.parseString(f.getValue().toString()),f.getKey());
                     }
                 }
             }
