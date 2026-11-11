@@ -58,20 +58,15 @@ public final class TechnicalWorldAudit implements ModInitializer {
             }
         });
     }
-    /* Test-only reflection against actual runtime objects, never guessed values or API stubs.
-       Fail closed if native options/packed-position accessors cannot be identified. */
-    private static boolean structuresEnabled(MinecraftServer server) throws ReflectiveOperationException {
-        Object data=server.getWorldData();
-        for(Method m:data.getClass().getMethods()) {
-            if(m.getParameterCount()!=0)continue;
-            String type=m.getReturnType().getSimpleName();
-            if(type.equals("WorldOptions")||type.equals("WorldGenOptions")) {
-                Object options=m.invoke(data);
-                return (boolean)options.getClass().getMethod("generateStructures").invoke(options);
-            }
-        }
-        throw new IllegalStateException("No native world-options accessor: "+Arrays.toString(data.getClass().getMethods()));
+    /** Configuration is not evidence of a structure: actual valid starts and FULL pieces are required below. */
+    private static boolean structuresEnabled() throws IOException {
+        Properties properties=new Properties();
+        try(Reader in=Files.newBufferedReader(Path.of("server.properties"))){properties.load(in);}
+        String value=properties.getProperty("generate-structures");
+        if(value==null)throw new IllegalStateException("Missing explicit generate-structures property");
+        return Boolean.parseBoolean(value);
     }
+    /** Test-only actual native packed-position conversion; fail closed if the API changes. */
     private static ChunkPos unpack(long packed) {
         try {
             for(Method m:ChunkPos.class.getDeclaredMethods())
@@ -90,11 +85,12 @@ public final class TechnicalWorldAudit implements ModInitializer {
         if(!actual.contains(expected))throw new AssertionError("World preset silently fell back: "+actual);
         report.addProperty("case",System.getenv("FG_AUDIT_CASE"));report.addProperty("seed",level.getSeed());
         report.addProperty("settings",actual);
-        boolean enabled=structuresEnabled(server);report.addProperty("structure_generation_enabled",enabled);
-        if(!enabled)throw new AssertionError("Structures disabled");
+        boolean enabled=structuresEnabled();report.addProperty("structure_generation_enabled",enabled);
+        report.addProperty("structure_flag_source","server.properties; actual generation separately checked through valid starts and FULL footprints");
+        if(!enabled)throw new AssertionError("Structures disabled in the test configuration");
         state=RandomState.create(server.registryAccess().lookupOrThrow(Registries.NOISE),level.getSeed(),g.generatorSettings().value());
         verifyNativePlacementRules(server);verifySpawn();
-        JsonArray regions=new JsonArray();BlockPos spawn=level.getRespawnData().pos();
+        JsonArray regions=new JsonArray();report.add("regions",regions);BlockPos spawn=level.getRespawnData().pos();
         regions.add(scanRegion("spawn",Math.floorDiv(spawn.getX(),16),Math.floorDiv(spawn.getZ(),16),3));
         regions.add(scanRegion("positive-negative-chunk-seams",0,0,3));
         var fgSettings=server.registryAccess().lookupOrThrow(Registries.NOISE_SETTINGS).getOrThrow(
@@ -114,15 +110,13 @@ public final class TechnicalWorldAudit implements ModInitializer {
             JsonObject region=scanRegion("mountain-"+(++index),Math.floorDiv(peak.x(),16),Math.floorDiv(peak.z(),16),5);
             region.addProperty("fg_selection_uplift",peak.uplift());regions.add(region);
         }
-        report.add("regions",regions);
-        JsonArray structures=new JsonArray();Set<String> inspected=new HashSet<>();
+        JsonArray structures=new JsonArray();report.add("structures",structures);Set<String> inspected=new HashSet<>();
         List<String> villages=List.of("village_plains","village_desert","village_savanna","village_snowy","village_taiga");
         inspectNearest(server,villages,0,0,true,inspected,structures);
         inspectNearest(server,villages,-8192,8192,true,inspected,structures);
         inspectNearest(server,List.of("pillager_outpost"),0,0,false,inspected,structures);
         inspectNearest(server,List.of("desert_pyramid"),0,0,false,inspected,structures);
         inspectNearest(server,List.of("stronghold"),0,0,true,inspected,structures);
-        report.add("structures",structures);
         long villageCount=structures.asList().stream().filter(e->e.getAsJsonObject().get("id").getAsString().contains("village_")).count();
         if(villageCount<1)throw new AssertionError("No village actually examined");
         report.addProperty("villages_examined",villageCount);
@@ -293,11 +287,11 @@ public final class TechnicalWorldAudit implements ModInitializer {
             BoundingBox box=piece.getBoundingBox();int pieceCols=0,deep=0,maxGap=0;
             int floorTop=Math.min(box.maxY(),box.minY()+Math.max(4,pool.getGroundLevelDelta()+2));
             for(int x=box.minX();x<=box.maxX();x++)for(int z=box.minZ();z<=box.maxZ();z++){
-                int lowest=-1;
+                int lowest=Integer.MIN_VALUE;
                 for(int y=Math.max(-64,box.minY());y<=Math.min(319,floorTop);y++){
                     var s=level.getBlockState(new BlockPos(x,y,z));if(s.isSolid()){lowest=y;break;}
                 }
-                if(lowest<0)continue;int gap=0;
+                if(lowest==Integer.MIN_VALUE)continue;int gap=0;
                 for(int y=lowest-1;y>=-64&&gap<=32;y--){var b=level.getBlockState(new BlockPos(x,y,z));if(b.isSolid()||!b.getFluidState().isEmpty())break;gap++;}
                 pieceCols++;if(gap>8)deep++;maxGap=Math.max(maxGap,gap);
             }
