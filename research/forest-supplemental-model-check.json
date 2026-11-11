@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "source_commit": "3aea3dacefdf23a3c5d2327d2b5a7685f53564d1",
+  "core_git_blob_sha1": "374f9ab1f1181c608030f95e8bb987c5940c1a70",
+  "scope": "Independent pure-Java model check; not Minecraft world, not ecological fit or visual validation",
+  "runtime": "21.0.12.1",
+  "seed_count": 64,
+  "distinct_opening_maps": 64,
+  "sample_positions_per_family": 1048576,
+  "flat_site_temperate_mean_retention": 0.908551544,
+  "flat_site_tropical_mean_retention": 0.914404941,
+  "flat_site_mean_retention_range_across_seeds": [0.858750677, 0.945561478],
+  "flat_site_opening_above_half_fraction": 0.027893066,
+  "flat_site_kept_fraction": 0.908396721,
+  "flat_site_tropical_kept_fraction": 0.914293289,
+  "parallel_boundary_points_identical": 10000,
+  "stress_and_signed_chunk_checks": 16384,
+  "assumptions": "Test environment height=100, slope=0.15, temperature=0, moisture=0.2; not measured forest data"
+}
