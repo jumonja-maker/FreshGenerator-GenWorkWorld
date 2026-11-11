@@ -1,0 +1,368 @@
+{
+  "version": "0.2.4-alpha.1",
+  "source_commit": "19bf506dbb0ea9d06e5c5f3f70d235b2822ed727",
+  "run_url": "https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/42993395669",
+  "unit_tests_passed": 102,
+  "actual_server_runs": 25,
+  "server_run_breakdown": {
+    "save_reload_and_legacy_AAB": 10,
+    "paired_fixed_windows": 6,
+    "structures_with_vanilla_controls": 6,
+    "new_junction_search": 3
+  },
+  "one_public_world": "freshgenerator:world",
+  "changed_existing_generation_resources": [
+    "data/freshgenerator/worldgen/material_rule/highlands_v2/biome_surface.json",
+    "data/freshgenerator/worldgen/material_rule/highlands_v2/under_biome_surface.json",
+    "data/freshgenerator/worldgen/noise_settings/highlands_v2.json"
+  ],
+  "unchanged_existing_generation_resources": 330,
+  "geometry_and_aquifer_graph": "unchanged; paired native base heights and water levels required identical",
+  "paired_fixed_coordinate_audit": {
+    "source_commit": "19bf506dbb0ea9d06e5c5f3f70d235b2822ed727",
+    "reference_source": "4448d9dcf95feea951890d8ef65d8e8b8163af13",
+    "server_runs": 6,
+    "seeds": {
+      "42": {
+        "columns_compared": 6534,
+        "base_terrain_differences": 0,
+        "changed_top_material_columns": 1516,
+        "baseline_boundary_edges_checked": 144,
+        "snow_cut_edges_before": 65,
+        "snow_cut_edges_after": 8,
+        "exposed_cave_columns_before": 221,
+        "exposed_cave_columns_after": 0,
+        "snow_native_safety_checks": 6534,
+        "deep_climate_checks": 150,
+        "windows": [
+          {
+            "x": 4480,
+            "z": -12976,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -7936,
+            "z": 14720,
+            "exposed_cave_before": 221,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -16016,
+            "z": -3008,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3280,
+            "z": -3088,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3744,
+            "z": -14032,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": 0,
+            "z": 0,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          }
+        ]
+      },
+      "1337": {
+        "columns_compared": 6534,
+        "base_terrain_differences": 0,
+        "changed_top_material_columns": 2,
+        "baseline_boundary_edges_checked": 0,
+        "snow_cut_edges_before": 0,
+        "snow_cut_edges_after": 0,
+        "exposed_cave_columns_before": 0,
+        "exposed_cave_columns_after": 0,
+        "snow_native_safety_checks": 6534,
+        "deep_climate_checks": 150,
+        "windows": [
+          {
+            "x": 4480,
+            "z": -12976,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -7936,
+            "z": 14720,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -16016,
+            "z": -3008,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3280,
+            "z": -3088,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3744,
+            "z": -14032,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": 0,
+            "z": 0,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          }
+        ]
+      },
+      "-20261111": {
+        "columns_compared": 6534,
+        "base_terrain_differences": 0,
+        "changed_top_material_columns": 321,
+        "baseline_boundary_edges_checked": 44,
+        "snow_cut_edges_before": 0,
+        "snow_cut_edges_after": 0,
+        "exposed_cave_columns_before": 283,
+        "exposed_cave_columns_after": 0,
+        "snow_native_safety_checks": 6534,
+        "deep_climate_checks": 150,
+        "windows": [
+          {
+            "x": 4480,
+            "z": -12976,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -7936,
+            "z": 14720,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -16016,
+            "z": -3008,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3280,
+            "z": -3088,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": -3744,
+            "z": -14032,
+            "exposed_cave_before": 283,
+            "exposed_cave_after": 0
+          },
+          {
+            "x": 0,
+            "z": 0,
+            "exposed_cave_before": 0,
+            "exposed_cave_after": 0
+          }
+        ]
+      }
+    },
+    "snow_boundary_edges_before": 65,
+    "snow_boundary_edges_after": 8,
+    "scope": "fixed sampled windows, structures off here and checked separately; not universal visual quality or biome rarity statistics"
+  },
+  "newly_selected_biome_junction_audit": {
+    "42": {
+      "full_windows_scanned": 9,
+      "full_chunks_requested": 144,
+      "junctions_reported": 8,
+      "exposed_cave_columns": 0
+    },
+    "1337": {
+      "full_windows_scanned": 10,
+      "full_chunks_requested": 160,
+      "junctions_reported": 10,
+      "exposed_cave_columns": 0
+    },
+    "-20261111": {
+      "full_windows_scanned": 11,
+      "full_chunks_requested": 176,
+      "junctions_reported": 11,
+      "exposed_cave_columns": 0
+    }
+  },
+  "structure_and_topology_summary": {
+    "fg-42": {
+      "full_chunks_explicitly_requested": 625,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 10,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 269,
+      "village_rigid_pieces_checked": 88,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 1,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Village [-59, -28]: suspended-piece candidates=0, locally blocked door candidates=1"
+      ]
+    },
+    "vanilla-42": {
+      "full_chunks_explicitly_requested": 640,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 2,
+      "isolated_single_blocks": 2,
+      "boundary_unknown_components": 18,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 409,
+      "village_rigid_pieces_checked": 110,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 3,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "mountain-2: 2 sky-exposed detached natural components; inspect coordinates, no automatic deletion",
+        "Village [41, -19]: suspended-piece candidates=0, locally blocked door candidates=2",
+        "Village [-504, 492]: suspended-piece candidates=0, locally blocked door candidates=1"
+      ]
+    },
+    "fg-1337": {
+      "full_chunks_explicitly_requested": 611,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 8,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 451,
+      "village_rigid_pieces_checked": 92,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 0,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": []
+    },
+    "vanilla-1337": {
+      "full_chunks_explicitly_requested": 621,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 1,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 10,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 440,
+      "village_rigid_pieces_checked": 125,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 0,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "mountain-2: 1 sky-exposed detached natural components; inspect coordinates, no automatic deletion"
+      ]
+    },
+    "fg--20261111": {
+      "full_chunks_explicitly_requested": 617,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 0,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 438,
+      "village_rigid_pieces_checked": 140,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 3,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Village [-537, 480]: suspended-piece candidates=0, locally blocked door candidates=3"
+      ]
+    },
+    "vanilla--20261111": {
+      "full_chunks_explicitly_requested": 599,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 8,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 368,
+      "village_rigid_pieces_checked": 54,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 1,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Village [22, 17]: suspended-piece candidates=0, locally blocked door candidates=1"
+      ]
+    }
+  },
+  "save_reload": "passed with FULL neighbours",
+  "legacy_controlled_AAB": {
+    "reference_source_commit": "043ed9d749cf5efff8555d0516ab11b2b3867a89",
+    "reference_production_code_unmodified": true,
+    "test_process_options": " -XX:ActiveProcessorCount=1 -Dmax.bg.threads=1",
+    "base_height_columns_equal": 1280,
+    "full_blocks_compared": 491520,
+    "reference_AA_differences": 0,
+    "reference_AA_examples": [],
+    "full_block_differences": 0,
+    "first_differences": [],
+    "reference": {
+      "seed": 1337,
+      "settings": "ResourceKey[minecraft:worldgen/noise_settings / freshgenerator:balanced_v1]",
+      "preloaded_full_chunks": 21,
+      "base_height_columns": 1280,
+      "full_blocks": 491520,
+      "base_height_sha256": "6fee4c03286e1282302c23441b99aabfa597ff8cba0083b4a1891ec2c2e44ba0",
+      "block_sha256": "500911ccc23aee49c6a4944b673bbb2167396ac9af43ecbf2c5a776f28fcc061"
+    },
+    "reference_repeat": {
+      "seed": 1337,
+      "settings": "ResourceKey[minecraft:worldgen/noise_settings / freshgenerator:balanced_v1]",
+      "preloaded_full_chunks": 21,
+      "base_height_columns": 1280,
+      "full_blocks": 491520,
+      "base_height_sha256": "6fee4c03286e1282302c23441b99aabfa597ff8cba0083b4a1891ec2c2e44ba0",
+      "block_sha256": "500911ccc23aee49c6a4944b673bbb2167396ac9af43ecbf2c5a776f28fcc061"
+    },
+    "current": {
+      "seed": 1337,
+      "settings": "ResourceKey[minecraft:worldgen/noise_settings / freshgenerator:balanced_v1]",
+      "preloaded_full_chunks": 21,
+      "base_height_columns": 1280,
+      "full_blocks": 491520,
+      "base_height_sha256": "6fee4c03286e1282302c23441b99aabfa597ff8cba0083b4a1891ec2c2e44ba0",
+      "block_sha256": "500911ccc23aee49c6a4944b673bbb2167396ac9af43ecbf2c5a776f28fcc061"
+    }
+  },
+  "implementation": "independent shared multiscale domain-warped surface mask, near-surface biome depth guard, scoped native snowfall gate",
+  "third_party_code_copied": false,
+  "external_generator_dependency": false,
+  "limitations": [
+    "Not a universal biome-edge fix: targeted montane grass/snow/stone palettes only",
+    "Client render, weather visuals, grass/foliage colour blending and user modpack/DH not tested",
+    "Global biome and structure frequency per area not measured; native placement definitions preserved",
+    "Village door/pathfinding warnings retained, not all fixed",
+    "Existing chunks and stored biomes not rewritten; old/new borders can differ",
+    "Legacy full-block test uses explicit CPU visibility to control native decoration ordering; production limits are not changed"
+  ],
+  "jar_sha256": "ee6ba12c9743040c217a24ae0c187d0bfb23eca03047ca170ddcf28d0f17d5c7"
+}

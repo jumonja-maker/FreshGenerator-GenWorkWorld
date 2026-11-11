@@ -1,0 +1,160 @@
+{
+  "source_commit": "19bf506dbb0ea9d06e5c5f3f70d235b2822ed727",
+  "reference_source": "4448d9dcf95feea951890d8ef65d8e8b8163af13",
+  "server_runs": 6,
+  "seeds": {
+    "42": {
+      "columns_compared": 6534,
+      "base_terrain_differences": 0,
+      "changed_top_material_columns": 1516,
+      "baseline_boundary_edges_checked": 144,
+      "snow_cut_edges_before": 65,
+      "snow_cut_edges_after": 8,
+      "exposed_cave_columns_before": 221,
+      "exposed_cave_columns_after": 0,
+      "snow_native_safety_checks": 6534,
+      "deep_climate_checks": 150,
+      "windows": [
+        {
+          "x": 4480,
+          "z": -12976,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -7936,
+          "z": 14720,
+          "exposed_cave_before": 221,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -16016,
+          "z": -3008,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3280,
+          "z": -3088,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3744,
+          "z": -14032,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": 0,
+          "z": 0,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        }
+      ]
+    },
+    "1337": {
+      "columns_compared": 6534,
+      "base_terrain_differences": 0,
+      "changed_top_material_columns": 2,
+      "baseline_boundary_edges_checked": 0,
+      "snow_cut_edges_before": 0,
+      "snow_cut_edges_after": 0,
+      "exposed_cave_columns_before": 0,
+      "exposed_cave_columns_after": 0,
+      "snow_native_safety_checks": 6534,
+      "deep_climate_checks": 150,
+      "windows": [
+        {
+          "x": 4480,
+          "z": -12976,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -7936,
+          "z": 14720,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -16016,
+          "z": -3008,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3280,
+          "z": -3088,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3744,
+          "z": -14032,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": 0,
+          "z": 0,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        }
+      ]
+    },
+    "-20261111": {
+      "columns_compared": 6534,
+      "base_terrain_differences": 0,
+      "changed_top_material_columns": 321,
+      "baseline_boundary_edges_checked": 44,
+      "snow_cut_edges_before": 0,
+      "snow_cut_edges_after": 0,
+      "exposed_cave_columns_before": 283,
+      "exposed_cave_columns_after": 0,
+      "snow_native_safety_checks": 6534,
+      "deep_climate_checks": 150,
+      "windows": [
+        {
+          "x": 4480,
+          "z": -12976,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -7936,
+          "z": 14720,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -16016,
+          "z": -3008,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3280,
+          "z": -3088,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": -3744,
+          "z": -14032,
+          "exposed_cave_before": 283,
+          "exposed_cave_after": 0
+        },
+        {
+          "x": 0,
+          "z": 0,
+          "exposed_cave_before": 0,
+          "exposed_cave_after": 0
+        }
+      ]
+    }
+  },
+  "snow_boundary_edges_before": 65,
+  "snow_boundary_edges_after": 8,
+  "scope": "fixed sampled windows, structures off here and checked separately; not universal visual quality or biome rarity statistics"
+}
