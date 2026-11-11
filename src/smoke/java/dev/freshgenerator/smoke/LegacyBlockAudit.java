@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.zip.GZIPOutputStream;
 
 /** Test-only observer, copied unchanged into the historical source checkout for an A/B audit. */
@@ -30,6 +31,12 @@ public final class LegacyBlockAudit implements ModInitializer {
         var generator=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();
         var state=RandomState.create(server.registryAccess().lookupOrThrow(Registries.NOISE),level.getSeed(),generator.generatorSettings().value());
         int[][] chunks={{0,0},{1,0},{-1,0},{0,1},{0,-1}};
+        // Complete the same neighboring feature work before observing either build.
+        // Do not compare one target while the next target's decorations are still being generated.
+        var surrounding=new LinkedHashSet<Long>();
+        for(int[] pair:chunks) for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++)
+            surrounding.add(((long)(pair[0]+dx)<<32)|((pair[1]+dz)&0xffffffffL));
+        for(long key:surrounding) level.getChunk((int)(key>>32),(int)key);
         var heightDigest=MessageDigest.getInstance("SHA-256");
         var blockDigest=MessageDigest.getInstance("SHA-256");
         ByteBuffer bytes=ByteBuffer.allocate(4);
@@ -52,6 +59,7 @@ public final class LegacyBlockAudit implements ModInitializer {
         }
         JsonObject r=new JsonObject();r.addProperty("seed",level.getSeed());
         r.addProperty("settings",generator.generatorSettings().unwrapKey().orElseThrow().toString());
+        r.addProperty("preloaded_full_chunks",surrounding.size());
         r.addProperty("base_height_columns",1280);r.addProperty("full_blocks",count);
         r.addProperty("base_height_sha256",HexFormat.of().formatHex(heightDigest.digest()));
         r.addProperty("block_sha256",HexFormat.of().formatHex(blockDigest.digest()));
