@@ -1,0 +1,22 @@
+name: Inspect actual worldgen APIs
+on:
+  workflow_dispatch:
+  push:
+    paths: ['src/test/java/dev/freshgenerator/ApiProbe.java']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.2'
+          cache-disabled: true
+      - run: gradle --no-daemon --console=plain apiProbe

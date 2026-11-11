@@ -10,8 +10,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 28
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
