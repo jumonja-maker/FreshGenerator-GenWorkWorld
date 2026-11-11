@@ -11,9 +11,9 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 sourceSets {
-    core { java.srcDir 'src/core/java' }
+    core { java.setSrcDirs(['src/core/java']) }
     tool {
-        java.srcDir 'src/tool/java'
+        java.setSrcDirs(['src/tool/java'])
         compileClasspath += sourceSets.core.output + configurations.compileClasspath
         runtimeClasspath += sourceSets.core.output + configurations.runtimeClasspath
     }
@@ -26,7 +26,7 @@ sourceSets {
         runtimeClasspath += sourceSets.core.output + sourceSets.tool.output
     }
     smoke {
-        java.srcDir 'src/smoke/java'
+        java.setSrcDirs(['src/smoke/java'])
         compileClasspath += sourceSets.main.output + sourceSets.core.output + configurations.compileClasspath
         runtimeClasspath += sourceSets.main.output + sourceSets.core.output + configurations.runtimeClasspath
     }
@@ -51,13 +51,19 @@ processResources {
 java { sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25; withSourcesJar() }
 tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
 jar { from sourceSets.core.output }
-// Loom already includes the core source set through mods.freshgenerator.
-sourcesJar { dependsOn generateWorldgen; from sourceSets.tool.allSource }
+// Loom may also contribute these same source paths. The release gate verifies their presence.
+sourcesJar {
+    dependsOn generateWorldgen
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.core.allSource
+    from sourceSets.tool.allSource
+}
 test {
     dependsOn toolClasses
     useJUnitPlatform()
     testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'full' }
 }
+check { dependsOn smokeClasses }
 tasks.register('apiProbe', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
