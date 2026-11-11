@@ -21,9 +21,14 @@ sourceSets {
         compileClasspath += sourceSets.core.output
         runtimeClasspath += sourceSets.core.output
     }
+    audit {
+        java.setSrcDirs(['src/audit/java'])
+        compileClasspath += sourceSets.main.output + sourceSets.core.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.core.output + configurations.runtimeClasspath
+    }
     test {
-        compileClasspath += sourceSets.core.output + sourceSets.tool.output
-        runtimeClasspath += sourceSets.core.output + sourceSets.tool.output
+        compileClasspath += sourceSets.core.output + sourceSets.tool.output + sourceSets.audit.output
+        runtimeClasspath += sourceSets.core.output + sourceSets.tool.output + sourceSets.audit.output
     }
     smoke {
         java.setSrcDirs(['src/smoke/java'])
@@ -51,7 +56,6 @@ processResources {
 java { sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25; withSourcesJar() }
 tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
 jar { from sourceSets.core.output }
-// Loom may also contribute these same source paths. The release gate verifies their presence.
 sourcesJar {
     dependsOn generateWorldgen
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -59,11 +63,11 @@ sourcesJar {
     from sourceSets.tool.allSource
 }
 test {
-    dependsOn toolClasses
+    dependsOn toolClasses, auditClasses
     useJUnitPlatform()
     testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'full' }
 }
-check { dependsOn smokeClasses }
+check { dependsOn smokeClasses, auditClasses }
 tasks.register('apiProbe', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
@@ -73,6 +77,7 @@ loom {
     mods {
         freshgenerator { sourceSet sourceSets.main; sourceSet sourceSets.core }
         freshgenerator_smoke { sourceSet sourceSets.smoke }
+        freshgenerator_audit { sourceSet sourceSets.audit }
     }
 }
 if (System.getenv('FRESHGENERATOR_SMOKE') == 'true') {
@@ -82,4 +87,12 @@ if (System.getenv('FRESHGENERATOR_SMOKE') == 'true') {
         vmArg '-Dfreshgenerator.integration=true'
     }
     tasks.matching { it.name == 'runServer' }.configureEach { dependsOn smokeClasses }
+}
+if (System.getenv('FRESHGENERATOR_AUDIT') == 'true') {
+    loom.runs.named('server') {
+        source = sourceSets.audit
+        vmArg '-Xmx3G'
+        vmArg '-Dfreshgenerator.audit=true'
+    }
+    tasks.matching { it.name == 'runServer' }.configureEach { dependsOn auditClasses }
 }
