@@ -50,6 +50,13 @@ class CaveMetricsTest(unittest.TestCase):
  def test_waterlogged_shrieker_is_not_excused(self):
   r=compare_deep(report(0,AIR),report(2,SHRIEKER.replace('waterlogged=false','waterlogged=true')))
   self.assertEqual(r['deep_unexplained_occupancy_changes'],1)
+ def test_catalyst_change_is_counted_after_verified_terrain_stage(self):
+  r=compare_deep(report(1,'Block{minecraft:sculk_catalyst}[bloom=false]'),report(0,AIR))
+  self.assertEqual((r['deep_terrain_occupancy_changes'],r['deep_feature_only_occupancy_changes'],r['deep_unexplained_occupancy_changes']),(1,1,0))
+  self.assertEqual(geometric_kind(1,'Block{minecraft:sculk_catalyst}[bloom=false]'),1)
+ def test_unknown_mod_catalyst_is_not_excused(self):
+  r=compare_deep(report(1,'Block{another:sculk_catalyst}[bloom=false]'),report(0,AIR))
+  self.assertEqual(r['deep_unexplained_occupancy_changes'],1)
  def test_exact_terrain_snapshot(self):
   r=compare_terrain_stage(stage(),stage());self.assertEqual(r['deep_block_samples'],16);self.assertTrue(r['exact_block_states_identical'])
  def test_terrain_change_rejected_even_for_decorated_world(self):

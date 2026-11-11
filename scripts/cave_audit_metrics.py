@@ -17,14 +17,16 @@ def geometric_kind(raw_kind: int, state: str) -> int:
 def dry_sculk_feature_pair(a: str, b: str) -> bool:
     """Annotate, NOT erase, changed post-feature occupancy. Full sculk is terrain."""
     empty = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
-    features = {'minecraft:sculk_vein', 'minecraft:sculk_sensor', 'minecraft:sculk_shrieker'}
+    waterloggable = {'minecraft:sculk_vein', 'minecraft:sculk_sensor', 'minecraft:sculk_shrieker'}
+    # The full-block catalyst is a placed feature too; count its change, never call it air.
+    features = waterloggable | {'minecraft:sculk_catalyst'}
     ids = []
     for state in (a, b):
         match = re.fullmatch(r'Block\{([^}]+)\}(?:\[[^\]]*\])?', state)
         if not match or 'waterlogged=true' in state:
             return False
         name = match.group(1)
-        if name in features and 'waterlogged=false' not in state:
+        if name in waterloggable and 'waterlogged=false' not in state:
             return False
         if name not in empty | features:
             return False
