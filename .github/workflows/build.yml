@@ -20,8 +20,10 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Compile native cave API and run all unit tests
-        run: gradle --no-daemon --console=plain clean build
+      - name: Compile native cave API and run all unit and metric tests
+        run: |
+          gradle --no-daemon --console=plain clean build
+          python3 scripts/test_cave_audit_metrics.py
       - name: Paired surface openings seed 42 and save reload
         run: bash scripts/cave_world_audit.sh 42 fresh
       - name: Paired surface openings seed 1337 and save reload
