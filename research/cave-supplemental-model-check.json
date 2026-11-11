@@ -1,0 +1,15 @@
+{
+  "source_blob": "10a4eedc311f06406386ff561a17dc817634219f",
+  "random_sites": 2000000,
+  "underwater_sites": 661997,
+  "deep_sites": 1582693,
+  "open_gate_sites": 2000000,
+  "serial_parallel_samples": 100000,
+  "invalid_inputs_rejected": 12,
+  "maximum_numeric_density_decrease": 0.0,
+  "maximum_threshold_jump": 6.661338147750939e-16,
+  "status": "passed",
+  "scope": "Pure CaveAccessModel invariants only, not native noise distribution, terrain generation or visual quality",
+  "model_source_commit": "c4e760de2bc1473ff5635600c30d636f060e49f9",
+  "runtime": "OpenJDK 21.0.12.1; pure model only. Full Minecraft build uses Java 25 in CI."
+}
