@@ -1,4 +1,6 @@
 {
-  "generator.freshgenerator.balanced_v1": "FreshGenerator: Сбалансированный",
-  "generator.freshgenerator.highlands_v1": "FreshGenerator: Высокогорье"
+  "generator.freshgenerator.balanced_v1": "FreshGenerator: Сбалансированный (прежний v1)",
+  "generator.freshgenerator.highlands_v1": "FreshGenerator: Высокогорье (прежний v1)",
+  "generator.freshgenerator.balanced_v2": "FreshGenerator: Природный рельеф v2",
+  "generator.freshgenerator.highlands_v2": "FreshGenerator: Альпийские хребты v2"
 }
