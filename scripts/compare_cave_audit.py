@@ -1,5 +1,5 @@
 """Report the same windows, including surviving openings. Do not call these exact cave counts."""
-import base64,json,os,pathlib,sys
+import base64,json,os,pathlib,struct,sys
 p=pathlib.Path(sys.argv[1]);a,b,c=[json.loads((p/(s+'.json')).read_text()) for s in ['reference','candidate','candidate-reload']]
 assert all(x['completed'] for x in [a,b,c])
 assert a['source_commit']=='319c9060109ff29e894a35e45d92f604f845d2c5'
@@ -7,13 +7,32 @@ assert b['source_commit']==c['source_commit']==os.environ['GITHUB_SHA']
 assert a['seed']==b['seed']==c['seed'] and a['settings']==b['settings']==c['settings']
 normal=b['settings']=='minecraft:overworld';rows=[];before=after=deep_changed=0
 assert len(a['regions'])==len(b['regions'])==len(c['regions'])
+def deep_details(old,new,left,right):
+ assert old['deep_column_top_y']==new['deep_column_top_y']
+ assert old['deep_min_y']==new['deep_min_y'] and old['deep_column_stride']==new['deep_column_stride']
+ ix=[v[0] for v in struct.iter_unpack('>H',base64.b64decode(old['deep_state_indices_u16be']))]
+ iy=[v[0] for v in struct.iter_unpack('>H',base64.b64decode(new['deep_state_indices_u16be']))]
+ assert len(ix)==len(iy)==len(left)==len(right)
+ examples=[];offset=0;stride=old['deep_column_stride'];n=old['side']//stride
+ for column,top in enumerate(old['deep_column_top_y']):
+  x=old['x']+(column//n)*stride;z=old['z']+(column%n)*stride
+  for y in range(old['deep_min_y'],top+1):
+   if left[offset]!=right[offset] and len(examples)<32:
+    examples.append({'x':x,'y':y,'z':z,'before':old['deep_state_palette'][ix[offset]],'after':new['deep_state_palette'][iy[offset]],'before_kind':left[offset],'after_kind':right[offset]})
+   offset+=1
+ assert offset==len(left)
+ return examples
 for old,new,reload in zip(a['regions'],b['regions'],c['regions']):
  for key in ['label','x','z','side','columns','envelope_sha256','deep_density_sha256']:
   assert old[key]==new[key]==reload[key],(key,old['label'])
  assert new==reload,('Saved FULL area changed on reopen',new['label'])
  left=base64.b64decode(old['deep_occupancy_base64']);right=base64.b64decode(new['deep_occupancy_base64']);assert len(left)==len(right)
  delta=sum(x!=y for x,y in zip(left,right));deep_changed+=delta
- # Deeper geometry is required equal, not merely statistically similar.
+ if delta:
+  details={'seed':b['seed'],'label':old['label'],'different_samples':delta,'examples':deep_details(old,new,left,right)}
+  (p/'deep-mismatch.json').write_text(json.dumps(details,indent=2)+'\n')
+  print('CAVE_DEEP_MISMATCH '+json.dumps(details),flush=True)
+ # Do not relax this release gate until exact discrepant states and their origin are understood.
  assert delta==0,('Deep occupancy changed',new['label'],delta)
  if normal:assert old==new,('Vanilla world modified',old['label'])
  if old['submerged_envelope_columns']==old['columns']:
@@ -34,7 +53,6 @@ else:
  assert t['cave_deep_blocked']==t['canyon_deep_blocked']==0,t
  assert t['cave_deep_forwarded']>0 and t['canyon_forwarded']>0,t
  assert before>0 and after<before,('No measured reduction',before,after)
- # Some openings MUST survive; a global cave-off patch is not acceptable.
  assert after>0,('All sampled surface entrances disappeared',before,after)
 result={'source_commit':os.environ['GITHUB_SHA'],'reference_source':a['source_commit'],'seed':b['seed'],'settings':b['settings'],
  'actual_server_runs':3,'explicit_full_chunks_per_pass':b['full_chunks_requested'],'regions':rows,'telemetry':t,

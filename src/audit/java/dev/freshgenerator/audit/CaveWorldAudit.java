@@ -100,7 +100,8 @@ public final class CaveWorldAudit implements ModInitializer {
   for(int cx=Math.floorDiv(x0,16)-1;cx<=Math.floorDiv(x0+side-1,16)+1;cx++)for(int cz=Math.floorDiv(z0,16)-1;cz<=Math.floorDiv(z0+side-1,16)+1;cz++){
    level.getChunk(cx,cz);chunks.add(((long)cx<<32)|(cz&0xffffffffL));}
   MessageDigest envelope=MessageDigest.getInstance("SHA-256"),deepNoise=MessageDigest.getInstance("SHA-256"),blocks=MessageDigest.getInstance("SHA-256");
-  ByteArrayOutputStream deep=new ByteArrayOutputStream();Map<BlockState,byte[]> encoded=new IdentityHashMap<>();
+  ByteArrayOutputStream deep=new ByteArrayOutputStream(),deepStates=new ByteArrayOutputStream();Map<BlockState,byte[]> encoded=new IdentityHashMap<>();
+  Map<BlockState,Integer> stateIds=new IdentityHashMap<>();List<String> palette=new ArrayList<>();List<Integer> deepTops=new ArrayList<>();
   int[] ground=new int[side*side],waterHeights=new int[side*side];boolean[] openings=new boolean[side*side];
   int holes=0,noiseHoles=0,deepAir=0,wet=0,underSea=0;BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();
   for(int dx=0;dx<side;dx++)for(int dz=0;dz<side;dz++){
@@ -117,9 +118,12 @@ public final class CaveWorldAudit implements ModInitializer {
    if(dx%4==0&&dz%4==0){
     policy(x,z,hh);
     var chunk=level.getChunk(Math.floorDiv(x,16),Math.floorDiv(z,16));
-    for(int yy=-48;yy<=Math.min(48,(int)Math.floor(hh)-64);yy++){
+    int deepTop=Math.min(48,(int)Math.floor(hh)-64);deepTops.add(deepTop);
+    for(int yy=-48;yy<=deepTop;yy++){
      pos.set(x,yy,z);var s=chunk.getBlockState(pos);int kind=!s.getFluidState().isEmpty()?2:s.isSolid()&&!s.is(BlockTags.LOGS)&&!s.is(BlockTags.LEAVES)?1:0;
      deep.write(kind);if(kind==0)deepAir++;
+     int id=stateIds.computeIfAbsent(s,k->{int v=palette.size();palette.add(k.toString());return v;});
+     if(id>65535)throw new AssertionError("Deep-state palette exceeds ushort");deepStates.write(id>>>8);deepStates.write(id&255);
      if(!normal&&yy%8==0)deepNoise.update(ByteBuffer.allocate(4).putFloat(body(x,yy,z)).array());
     }
     for(int yy=-64;yy<320;yy++){pos.set(x,yy,z);var s=chunk.getBlockState(pos);blocks.update(encoded.computeIfAbsent(s,k->(k.toString()+"\n").getBytes(StandardCharsets.UTF_8)));}
@@ -130,6 +134,8 @@ public final class CaveWorldAudit implements ModInitializer {
   result.addProperty("wet_ground_columns",wet);result.addProperty("submerged_envelope_columns",underSea);result.addProperty("deep_air_samples",deepAir);
   result.addProperty("envelope_sha256",HexFormat.of().formatHex(envelope.digest()));result.addProperty("deep_density_sha256",HexFormat.of().formatHex(deepNoise.digest()));
   result.addProperty("sampled_full_blocks_sha256",HexFormat.of().formatHex(blocks.digest()));result.addProperty("deep_occupancy_base64",Base64.getEncoder().encodeToString(deep.toByteArray()));
+  result.add("deep_state_palette",G.toJsonTree(palette));result.addProperty("deep_state_indices_u16be",Base64.getEncoder().encodeToString(deepStates.toByteArray()));
+  result.add("deep_column_top_y",G.toJsonTree(deepTops));result.addProperty("deep_min_y",-48);result.addProperty("deep_column_stride",4);
   result.add("ground_y",G.toJsonTree(ground));result.add("water_y",G.toJsonTree(waterHeights));result.add("opening_regions",components(openings,side));
   return result;
  }
