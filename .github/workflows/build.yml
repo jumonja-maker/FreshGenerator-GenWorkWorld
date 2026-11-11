@@ -20,36 +20,38 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Compile actual game and run all unit tests
+      - name: Compile native cave API and run all unit tests
         run: gradle --no-daemon --console=plain clean build
-      - name: Paired forest seed 42 and save reload
-        run: bash scripts/forest_world_audit.sh 42 fresh
-      - name: Paired forest seed 1337 and save reload
-        run: bash scripts/forest_world_audit.sh 1337 fresh
-      - name: Paired forest seed -20261111 and save reload
-        run: bash scripts/forest_world_audit.sh -20261111 fresh
-      - name: Ordinary Minecraft scope control and save reload
-        run: bash scripts/forest_world_audit.sh 42 normal
-      - name: Recheck structures and terrain with vanilla controls
+      - name: Paired surface openings seed 42 and save reload
+        run: bash scripts/cave_world_audit.sh 42 fresh
+      - name: Paired surface openings seed 1337 and save reload
+        run: bash scripts/cave_world_audit.sh 1337 fresh
+      - name: Paired surface openings seed -20261111 and save reload
+        run: bash scripts/cave_world_audit.sh -20261111 fresh
+      - name: Ordinary Minecraft scope and save reload
+        run: bash scripts/cave_world_audit.sh 42 normal
+      - name: Structures and connected terrain with vanilla controls
         run: bash scripts/terrain_fix_audit.sh
-      - name: Preserve detailed failures
+      - name: Preserve exact failure context
         if: failure()
         run: |
           python3 - <<'PY'
-          import pathlib,xml.etree.ElementTree as E
+          import pathlib,json,xml.etree.ElementTree as E
           for p in pathlib.Path('build/test-results/test').glob('TEST-*.xml'):
             for c in E.parse(p).getroot().findall('testcase'):
-              for f in c.findall('failure')+c.findall('error'): print(p.name,c.get('name'),f.get('message'))
-          for p in pathlib.Path('build/reports/forest').rglob('*.json'):
-            if p.name=='comparison.json': print(p,p.read_text())
+              for f in c.findall('failure')+c.findall('error'): print(p.name,c.get('name'),f.get('message'),(f.text or '')[:3000])
+          for p in pathlib.Path('build/reports/caves').rglob('*.json'):
+            if p.name=='coordinates.json': continue
+            r=json.loads(p.read_text())
+            print('CAVE_FAILURE_EVIDENCE',p,json.dumps({'seed':r.get('seed'),'telemetry':r.get('telemetry'),'regions':[{k:w.get(k) for k in ['label','x','z','dry_opening_columns','noise_only_opening_columns','deep_air_samples','submerged_envelope_columns']} for w in r.get('regions',[])]}))
           PY
-      - name: Require completed evidence and validate distributable
-        run: python3 scripts/validate_forest_release.py
-      - name: Publish checked binary and attributable evidence
+      - name: Require reduced openings and preserved deep caves
+        run: python3 scripts/validate_cave_release.py
+      - name: Publish checked binary and paired evidence
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
-          git commit -m 'build: publish tested ecological forest placement and evidence [skip ci]'
+          git commit -m 'build: publish tested surface cave access correction [skip ci]'
           git push origin "HEAD:$GITHUB_REF_NAME"

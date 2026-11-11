@@ -14,7 +14,7 @@ public final class WorldgenCatalog {
   out.putAll(new WorldgenCompiler(vanilla,"highlands_v1",TerrainProfile.HIGHLANDS).compile());
   out.putAll(new NaturalWorldgenCompiler(vanilla,"balanced_v2",TerrainProfile.BALANCED).compile());
   out.putAll(new NaturalWorldgenCompiler(vanilla,"highlands_v2",TerrainProfile.HIGHLANDS).compile());
-  CoherentSurfaceCompiler.apply(out);EcotoneCompiler.apply(out);
+  CoherentSurfaceCompiler.apply(out);EcotoneCompiler.apply(out);CaveAccessCompiler.apply(out);
   out.put(VanillaAssets.path("world_preset",WORLD_ID),Objects.requireNonNull(out.get(VanillaAssets.path("world_preset",CURRENT_SETTINGS))).deepCopy());
   JsonArray values=new JsonArray();values.add(WORLD_ID);JsonObject tag=new JsonObject();tag.addProperty("replace",false);tag.add("values",values);out.put(NORMAL_TAG,tag);
   return Collections.unmodifiableMap(out);
