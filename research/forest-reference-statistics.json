@@ -1,0 +1,184 @@
+{
+  "source_commit": "825df45832f5cf5b2ceadb5e3e85dad18a6d5121",
+  "upstream_commit": "3316eca0ef691ee8717fb4421918dd95978b5560",
+  "method": "Independent base-R aggregates; 64 uniform fixed-count controls, same window. No spatstat algorithms copied.",
+  "upstream_package_license": "GPL >=2; raw datasets and package code are NOT distributed in the mod or repository.",
+  "data_usage": "Research observations only; no direct conversion of empirical stems/ha to Minecraft trees/chunk.",
+  "datasets": {
+    "lansing": {
+      "provenance": {
+        "data/lansing.rda": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/data/lansing.rda",
+          "sha256": "a4ef7127e6e71b8b41b43f5368354dcff086632fb6ba5310f43729e6f54ad36d",
+          "bytes": 7167
+        },
+        "man/lansing.Rd": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/man/lansing.Rd",
+          "sha256": "e652b6792c2e0791d51044ee975601d4b003258af6d0a1d5064220c6a4f01f57",
+          "bytes": 3259
+        },
+        "DESCRIPTION": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/DESCRIPTION",
+          "sha256": "d4c15ff386381bd2d45b6f30458bba109b07b11522ed36549cb46b528dc938e0",
+          "bytes": 5369
+        }
+      },
+      "limitations": "Mixed woodland, 924ft square rescaled to metres (281.6352m side). Duplicate coordinates are retained and counted. Stem map is not canopy cover.",
+      "statistics": {
+        "records": 2251.0,
+        "window_width_m": 281.6352,
+        "window_height_m": 281.6352,
+        "area_m2": 79318.38587904,
+        "stems_per_ha_observed": 283.792966164586,
+        "duplicate_records": 1.0,
+        "nearest_median_m": 2.99382324199868,
+        "nearest_q10_m": 1.01545015457556,
+        "nearest_q90_m": 5.13936012531913,
+        "nearest_boundary_complete_count": 2184.0,
+        "nearest_boundary_complete_median_m": 2.94035781169833,
+        "grid4_variance_mean": 1.53126018066045,
+        "grid4_empty_fraction": 0.0,
+        "grid4_uniform_control_median_vm": 0.968310380571598,
+        "grid4_uniform_control_q025_vm": 0.336602991263142,
+        "grid4_uniform_control_q975_vm": 1.70059529098179,
+        "grid4_uniform_control_empty_fraction": 0.0,
+        "grid8_variance_mean": 1.13145480315627,
+        "grid8_empty_fraction": 0.0,
+        "grid8_uniform_control_median_vm": 0.95409447652895,
+        "grid8_uniform_control_q025_vm": 0.732123289120179,
+        "grid8_uniform_control_q975_vm": 1.32142892400556,
+        "grid8_uniform_control_empty_fraction": 0.0,
+        "grid16_variance_mean": 1.04095086279736,
+        "grid16_empty_fraction": 0.0,
+        "grid16_uniform_control_median_vm": 0.99323002412871,
+        "grid16_uniform_control_q025_vm": 0.851695368507243,
+        "grid16_uniform_control_q975_vm": 1.2185660403655,
+        "grid16_uniform_control_empty_fraction": 0.0
+      },
+      "species_counts": {
+        "blackoak": 135,
+        "hickory": 703,
+        "maple": 514,
+        "misc": 105,
+        "redoak": 346,
+        "whiteoak": 448
+      }
+    },
+    "hyytiala": {
+      "provenance": {
+        "data/hyytiala.rda": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/data/hyytiala.rda",
+          "sha256": "c8700962aec428bffff0393d9ca68d2054544519f1c5a062344bd62f436d359a",
+          "bytes": 2656
+        },
+        "man/hyytiala.Rd": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/man/hyytiala.Rd",
+          "sha256": "2cda1b9a420dd8f562d61a0e9915a5a69ab911755744671f4a35e71e0f755daf",
+          "bytes": 1260
+        },
+        "DESCRIPTION": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/DESCRIPTION",
+          "sha256": "d4c15ff386381bd2d45b6f30458bba109b07b11522ed36549cb46b528dc938e0",
+          "bytes": 5369
+        }
+      },
+      "limitations": "Mixed pine-dominated 20x20m sample. Very small plot: not a universal boreal density estimate, no landscape-sized gaps measurable.",
+      "statistics": {
+        "records": 168.0,
+        "window_width_m": 20.0,
+        "window_height_m": 20.0,
+        "area_m2": 400.0,
+        "stems_per_ha_observed": 4200.0,
+        "duplicate_records": 0.0,
+        "nearest_median_m": 0.899744943827773,
+        "nearest_q10_m": 0.406122511590509,
+        "nearest_q90_m": 1.33290093785292,
+        "nearest_boundary_complete_count": 152.0,
+        "nearest_boundary_complete_median_m": 0.869309176700493,
+        "grid4_variance_mean": 0.93968253968254,
+        "grid4_empty_fraction": 0.0,
+        "grid4_uniform_control_median_vm": 0.958730158730159,
+        "grid4_uniform_control_q025_vm": 0.52984126984127,
+        "grid4_uniform_control_q975_vm": 2.03777777777778,
+        "grid4_uniform_control_empty_fraction": 0.0,
+        "grid8_variance_mean": 0.792139077853364,
+        "grid8_empty_fraction": 0.046875,
+        "grid8_uniform_control_median_vm": 0.991685563114135,
+        "grid8_uniform_control_q025_vm": 0.738624338624339,
+        "grid8_uniform_control_q975_vm": 1.50839002267574,
+        "grid8_uniform_control_empty_fraction": 0.078125,
+        "grid16_variance_mean": 0.870961718020541,
+        "grid16_empty_fraction": 0.4921875,
+        "grid16_uniform_control_median_vm": 0.990476190476191,
+        "grid16_uniform_control_q025_vm": 0.877833800186741,
+        "grid16_uniform_control_q975_vm": 1.19365079365079,
+        "grid16_uniform_control_empty_fraction": 0.51953125
+      },
+      "species_counts": {
+        "aspen": 1,
+        "birch": 17,
+        "pine": 128,
+        "rowan": 22
+      }
+    },
+    "bei": {
+      "provenance": {
+        "data/bei.rda": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/data/bei.rda",
+          "sha256": "1d1fa0e65cd2e896687e843d9743d5c599d9d3dc3a57c2b858549e2450319fb7",
+          "bytes": 189368
+        },
+        "man/bei.Rd": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/man/bei.Rd",
+          "sha256": "ad395b411c6bd9945cd212a5f67b9e142625dd259cc9d0e5accc0db1113bb3ca",
+          "bytes": 2871
+        },
+        "DESCRIPTION": {
+          "url": "https://raw.githubusercontent.com/spatstat/spatstat.data/3316eca0ef691ee8717fb4421918dd95978b5560/DESCRIPTION",
+          "sha256": "d4c15ff386381bd2d45b6f30458bba109b07b11522ed36549cb46b528dc938e0",
+          "bytes": 5369
+        }
+      },
+      "limitations": "One species, Beilschmiedia pendula, in 1000x500m tropical plot. Empty quadrats are NOT canopy gaps; manual reports 3605, verify actual rows below.",
+      "statistics": {
+        "records": 3604.0,
+        "window_width_m": 1000.0,
+        "window_height_m": 500.0,
+        "area_m2": 500000.0,
+        "stems_per_ha_observed": 72.08,
+        "duplicate_records": 0.0,
+        "nearest_median_m": 3.2,
+        "nearest_q10_m": 0.707106781186539,
+        "nearest_q90_m": 9.23108596809681,
+        "nearest_boundary_complete_count": 3501.0,
+        "nearest_boundary_complete_median_m": 3.12569992161758,
+        "grid4_variance_mean": 117.17439881613,
+        "grid4_empty_fraction": 0.0,
+        "grid4_uniform_control_median_vm": 1.00747317795043,
+        "grid4_uniform_control_q025_vm": 0.43952645209027,
+        "grid4_uniform_control_q975_vm": 2.1756862745098,
+        "grid4_uniform_control_empty_fraction": 0.0,
+        "grid8_variance_mean": 51.0686891108645,
+        "grid8_empty_fraction": 0.015625,
+        "grid8_uniform_control_median_vm": 0.990433909412822,
+        "grid8_uniform_control_q025_vm": 0.692408787414337,
+        "grid8_uniform_control_q975_vm": 1.45771012807639,
+        "grid8_uniform_control_empty_fraction": 0.0,
+        "grid16_variance_mean": 20.371595830341,
+        "grid16_empty_fraction": 0.11328125,
+        "grid16_uniform_control_median_vm": 0.997636612913756,
+        "grid16_uniform_control_q025_vm": 0.850377140867446,
+        "grid16_uniform_control_q975_vm": 1.18602511370808,
+        "grid16_uniform_control_empty_fraction": 0.0
+      },
+      "species_counts": {
+        "Beilschmiedia_pendula": 3604
+      }
+    }
+  },
+  "not_collected": [
+    "Satellite tiles/GEDI footprints: catalogue reviewed only; not analysed here",
+    "Tree ages, crown shapes, actual flood return periods and soil moisture",
+    "Finpines excluded from calibration: manual cautions about coordinate perturbation and overlap"
+  ]
+}
