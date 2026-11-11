@@ -13,9 +13,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
-/** Native biome, height, water and survival placement filters execute BEFORE this hook.
- * Does not add attempts, move candidates, change tree selection tables or consume random values.
- * Saplings, commands, nested features and non-FreshGenerator worlds remain on the original path.
+/** Native biome, height, water and survival filters remain in control. No extra attempts,
+ * moved candidates or random draws. Saplings, commands, nested features and other worlds
+ * stay on the original path. The name check is only a cheap hint; identity is checked next.
  */
 @Mixin(FeaturePlacer.class)
 abstract class ForestPlacementMixin {
@@ -26,8 +26,11 @@ abstract class ForestPlacementMixin {
  private boolean freshgenerator$ecologicalForest(Feature feature,WorldGenLevel level,ChunkGenerator generator,
    RandomSource random,BlockPos at,Operation<Boolean> original,PlacedFeature placed,RandomSource sourceRandom,BlockPos origin,boolean biomeCheck){
   if(biomeCheck){
-   if(!freshgenerator$forestChecked){freshgenerator$forest=ForestEnvironment.create(level,generator);freshgenerator$forestChecked=true;}
-   if(freshgenerator$forest!=null&&!freshgenerator$forest.retain(placed,at))return false;
+   String hint=placed.feature().unwrapKey().map(k->k.identifier().toString()).orElse("");
+   if(hint.contains("tree")||hint.contains("birch")||hint.contains("taiga")||hint.contains("jungle")){
+    if(!freshgenerator$forestChecked){freshgenerator$forest=ForestEnvironment.create(level,generator);freshgenerator$forestChecked=true;}
+    if(freshgenerator$forest!=null&&!freshgenerator$forest.retain(placed,at))return false;
+   }
   }
   return original.call(feature,level,generator,random,at);
  }
