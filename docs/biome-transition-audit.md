@@ -1,6 +1,6 @@
 # Техосмотр стыков биомов и гор
 
-Проверен публичный мир `freshgenerator:world` с настройками `highlands_v2` из 0.2.3-alpha.1, основа `350ef76`. Замеры выполнены в Minecraft 26.3 с Fabric на сидах `42`, `1337` и `-20261111`. [Журнал GitHub Actions и исходные JSON](https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/42983100155).
+Проверен публичный мир `freshgenerator:world` с настройками `highlands_v2` из 0.2.3-alpha.1, основа `350ef76`. Замеры выполнены в Minecraft 26.3 с Fabric на сидах `42`, `1337` и `-20261111`. Исходные JSON доступны в шаге **Show raw audit JSON** для каждого сида. [Прогоны в GitHub Actions](https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/workflows/biome-transition-audit.yml?query=branch%3Aaudit%2Fbiome-mountain-transitions).
 
 ## Результат
 
