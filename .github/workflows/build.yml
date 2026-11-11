@@ -12,7 +12,7 @@ jobs:
   build:
     if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,12 +25,16 @@ jobs:
         with:
           gradle-version: '9.8.2'
           cache-disabled: true
-      - name: Compile actual game dependencies and run all unit tests
+      - name: Compile native game and test deterministic transition model
         run: gradle --no-daemon --console=plain clean build
+      - name: Compare published terrain with candidate at identical biome junctions
+        run: bash scripts/fixed_ecotone_audit.sh
       - name: Create and reopen the single FreshGenerator world
         run: bash scripts/world_smoke.sh
-      - name: Audit corrected terrain, native density, structures and vanilla controls
+      - name: Recheck mountains and structures against vanilla controls
         run: bash scripts/terrain_fix_audit.sh
+      - name: Search biome junctions on corrected worlds
+        run: bash scripts/biome_transition_audit.sh
       - name: Preserve detailed test failures
         if: failure()
         run: |
@@ -40,15 +44,15 @@ jobs:
             for c in E.parse(p).getroot().findall('testcase'):
               for f in c.findall('failure')+c.findall('error'): print(p.name,c.get('name'),f.get('message'),(f.text or '')[:6000])
           PY
-      - name: Require current terrain evidence and validate distributable
+      - name: Require current comparison and validate installable release
         run: python3 scripts/validate_release.py
-      - name: Commit checked binary and evidence
+      - name: Publish verified binary and attributable evidence
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
           if ! git diff --cached --quiet; then
-            git commit -m 'build: publish verified coherent-terrain correction [skip ci]'
+            git commit -m 'build: publish verified biome-depth and ecotone correction [skip ci]'
             git push origin "HEAD:$GITHUB_REF_NAME"
           fi

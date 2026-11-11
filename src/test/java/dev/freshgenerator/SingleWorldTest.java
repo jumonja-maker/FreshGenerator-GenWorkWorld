@@ -1,5 +1,4 @@
 package dev.freshgenerator;
-
 import com.google.gson.*;
 import dev.freshgenerator.pack.*;
 import org.junit.jupiter.api.Test;
@@ -7,55 +6,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.zip.ZipFile;
 import static org.junit.jupiter.api.Assertions.*;
-
 class SingleWorldTest {
-    private static Map<String, JsonElement> catalog() throws Exception {return WorldgenCatalog.compile(new VanillaAssets());}
-    @Test void exactlyOneFreshGeneratorWorldIsSelectable() throws Exception {
-        var tag=catalog().get(WorldgenCatalog.NORMAL_TAG).getAsJsonObject();assertFalse(tag.get("replace").getAsBoolean());
-        assertEquals(JsonParser.parseString("[\"freshgenerator:world\"]"),tag.get("values"));
-    }
-    @Test void currentWorldIncludesEveryDimensionAndTheLatestTerrainImprovements() throws Exception {
-        var files=catalog();var world=files.get(VanillaAssets.path("world_preset",WorldgenCatalog.WORLD_ID));
-        assertEquals(files.get(VanillaAssets.path("world_preset",WorldgenCatalog.CURRENT_SETTINGS)),world);
-        var dims=world.getAsJsonObject().getAsJsonObject("dimensions");
-        assertEquals(Set.of("minecraft:overworld","minecraft:the_nether","minecraft:the_end"),dims.keySet());
-        assertEquals(WorldgenCatalog.CURRENT_SETTINGS,dims.getAsJsonObject("minecraft:overworld").getAsJsonObject("generator").get("settings").getAsString());
-        assertTrue(files.containsKey(CoherentSurfaceCompiler.ROOT+"coherent/height.json"));
-    }
-    @Test void onlyAuditedActiveTerrainResourcesChangeAndLegacyResourcesRemainIntact() throws Exception {
-        var files=catalog();Set<String> changed=new TreeSet<>();int checked=0;
-        try(var zip=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.2.2-alpha.1.jar")) {
-            for(var entry:Collections.list(zip.entries())) {
-                String name=entry.getName();if(!name.startsWith("data/freshgenerator/")||!name.endsWith(".json"))continue;
-                assertNotNull(files.get(name),name);
-                try(var input=zip.getInputStream(entry)) {
-                    var before=JsonParser.parseString(new String(input.readAllBytes(),StandardCharsets.UTF_8));
-                    // Compare the actual resource representation, not Java Float versus parsed Double.
-                    var after=JsonParser.parseString(ResourceJson.encode(files.get(name)));
-                    if(!before.equals(after))changed.add(name);
-                }checked++;
-            }
-        }
-        assertEquals(323,checked);
-        assertEquals(CoherentSurfaceCompiler.REPLACED,changed);
-    }
-    @Test void noOtherSelectionTagReintroducesLegacyModes() throws Exception {
-        var files=catalog();assertEquals(List.of(WorldgenCatalog.NORMAL_TAG),files.keySet().stream().filter(p->p.contains("/tags/worldgen/world_preset/")).toList());
-        String tag=files.get(WorldgenCatalog.NORMAL_TAG).toString();for(String old:List.of("balanced","highlands","_v1","_v2"))assertFalse(tag.contains(old));
-    }
-    @Test void onlyPublicWorldNameIsTranslatedAndHasNoVariantSuffix() throws Exception {
-        for(String locale:List.of("en_us","ru_ru"))try(var input=getClass().getResourceAsStream("/assets/freshgenerator/lang/"+locale+".json")) {
-            assertNotNull(input);var language=JsonParser.parseString(new String(input.readAllBytes(),StandardCharsets.UTF_8)).getAsJsonObject();
-            assertEquals(Set.of("generator.freshgenerator.world"),language.keySet());assertEquals("FreshGenerator",language.get("generator.freshgenerator.world").getAsString());
-        }
-    }
-    @Test void rarityAndOtherModsRegistriesAreNotReplaced() throws Exception {
-        for(String path:catalog().keySet()) {
-            assertTrue(path.startsWith("data/freshgenerator/")||path.equals(WorldgenCatalog.NORMAL_TAG),path);
-            for(String registry:List.of("biome","structure","structure_set","placed_feature","feature"))assertFalse(path.contains("/worldgen/"+registry+"/"),path);
-        }
-    }
-    @Test void catalogIsDeterministicAndPublishedMapCannotBeMutated() throws Exception {
-        var files=catalog();assertEquals(files,catalog());assertThrows(UnsupportedOperationException.class,files::clear);
-    }
+ private static Map<String,JsonElement> catalog()throws Exception{return WorldgenCatalog.compile(new VanillaAssets());}
+ @Test void exactlyOneFreshGeneratorWorldIsSelectable()throws Exception{var t=catalog().get(WorldgenCatalog.NORMAL_TAG).getAsJsonObject();assertFalse(t.get("replace").getAsBoolean());assertEquals(JsonParser.parseString("[\"freshgenerator:world\"]"),t.get("values"));}
+ @Test void currentWorldIncludesEveryDimensionAndTheLatestTerrainImprovements()throws Exception{var f=catalog();var w=f.get(VanillaAssets.path("world_preset",WorldgenCatalog.WORLD_ID));assertEquals(f.get(VanillaAssets.path("world_preset",WorldgenCatalog.CURRENT_SETTINGS)),w);var d=w.getAsJsonObject().getAsJsonObject("dimensions");assertEquals(Set.of("minecraft:overworld","minecraft:the_nether","minecraft:the_end"),d.keySet());assertEquals(WorldgenCatalog.CURRENT_SETTINGS,d.getAsJsonObject("minecraft:overworld").getAsJsonObject("generator").get("settings").getAsString());assertTrue(f.containsKey(CoherentSurfaceCompiler.ROOT+"coherent/height.json"));}
+ @Test void onlyAuditedActiveTerrainResourcesChangeAndLegacyResourcesRemainIntact()throws Exception{new EcotoneCompilerTest().onlyThreeExistingResourcesChangeComparedToPublishedTerrainFix();}
+ @Test void noOtherSelectionTagReintroducesLegacyModes()throws Exception{var f=catalog();assertEquals(List.of(WorldgenCatalog.NORMAL_TAG),f.keySet().stream().filter(p->p.contains("/tags/worldgen/world_preset/")).toList());String t=f.get(WorldgenCatalog.NORMAL_TAG).toString();for(String n:List.of("balanced","highlands","_v1","_v2"))assertFalse(t.contains(n));}
+ @Test void onlyPublicWorldNameIsTranslatedAndHasNoVariantSuffix()throws Exception{for(String l:List.of("en_us","ru_ru"))try(var in=getClass().getResourceAsStream("/assets/freshgenerator/lang/"+l+".json")){assertNotNull(in);var j=JsonParser.parseString(new String(in.readAllBytes(),StandardCharsets.UTF_8)).getAsJsonObject();assertEquals(Set.of("generator.freshgenerator.world"),j.keySet());assertEquals("FreshGenerator",j.get("generator.freshgenerator.world").getAsString());}}
+ @Test void rarityAndOtherModsRegistriesAreNotReplaced()throws Exception{for(String p:catalog().keySet()){assertTrue(p.startsWith("data/freshgenerator/")||p.equals(WorldgenCatalog.NORMAL_TAG),p);for(String r:List.of("biome","structure","structure_set","placed_feature","feature"))assertFalse(p.contains("/worldgen/"+r+"/"),p);}}
+ @Test void catalogIsDeterministicAndPublishedMapCannotBeMutated()throws Exception{var f=catalog();assertEquals(f,catalog());assertThrows(UnsupportedOperationException.class,f::clear);}
 }

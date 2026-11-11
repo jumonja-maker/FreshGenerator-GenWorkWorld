@@ -2,10 +2,11 @@
   "schemaVersion": 1,
   "id": "freshgenerator",
   "version": "${version}",
-  "name": "FreshGenerator — Generation Core",
-  "description": "Versioned terrain composition with native biome and structure placement rules.",
+  "name": "FreshGenerator",
+  "description": "One coherent world: envelope-aware biomes and shared snow, grass and rock transitions.",
   "environment": "*",
   "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator"]},
+  "mixins": ["freshgenerator.mixins.json"],
   "authors": ["FreshGenerator contributors"],
   "license": "MIT",
   "depends": {"minecraft": "26.3", "java": ">=25", "fabricloader": ">=0.20.1", "fabric-api": "*"}

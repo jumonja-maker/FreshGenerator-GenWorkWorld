@@ -1,10 +1,15 @@
 package dev.freshgenerator;
 
+import dev.freshgenerator.surface.EcotoneSurfaceRule;
 import net.fabricmc.api.ModInitializer;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 
-/** Uses Minecraft's real registry-driven generation pipeline. No external generator mod. */
+/** Standalone native registry-driven generator. No third-party generator dependency. */
 public final class FreshGenerator implements ModInitializer {
     @Override public void onInitialize() {
-        System.out.println("[FreshGenerator] Generation core loaded. Existing world types are not replaced.");
+        Registry.register(BuiltInRegistries.MATERIAL_RULE_TYPE,Identifier.parse("freshgenerator:ecotone_surface"),EcotoneSurfaceRule.CODEC);
+        System.out.println("[FreshGenerator] One world; coherent terrain, envelope-aware biome depth and shared surface transitions.");
     }
 }
