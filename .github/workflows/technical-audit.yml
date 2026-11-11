@@ -1,13 +1,8 @@
-name: Technical world-generation audit
+name: Manual technical world-generation audit
 on:
   workflow_dispatch:
-  push:
-    paths: ['src/audit/**', 'src/test/java/dev/freshgenerator/VoxelConnectivityTest.java', 'scripts/technical_audit.sh', 'scripts/summarize_technical_audit.py', '.github/workflows/technical-audit.yml']
 permissions:
-  contents: write
-concurrency:
-  group: technical-${{ github.ref }}
-  cancel-in-progress: true
+  contents: read
 jobs:
   audit:
     runs-on: ubuntu-24.04
@@ -22,19 +17,5 @@ jobs:
         with:
           gradle-version: '9.8.2'
           cache-disabled: true
-      - name: Build against real game and test the audit algorithm
-        run: gradle --no-daemon --console=plain clean build
-      - name: Three seeds, canonical FreshGenerator and vanilla controls
-        run: bash scripts/technical_audit.sh
-      - name: Record completed observations (not an installable release)
-        run: |
-          set -euo pipefail
-          mkdir -p dist/audits
-          cp build/reports/technical/technical-audit.json dist/audits/technical-audit.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add dist/audits/technical-audit.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'test: record actual terrain and structure observations [skip ci]'
-            git push origin "HEAD:$GITHUB_REF_NAME"
-          fi
+      - run: gradle --no-daemon --console=plain clean build
+      - run: bash scripts/terrain_fix_audit.sh

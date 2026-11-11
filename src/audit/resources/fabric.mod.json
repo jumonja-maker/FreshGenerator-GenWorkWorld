@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "name": "FreshGenerator isolated world audit - NOT an installable mod",
   "environment": "server",
-  "entrypoints": {"main": ["dev.freshgenerator.audit.TechnicalWorldAudit"]},
+  "entrypoints": {"main": ["dev.freshgenerator.audit.CoherentEnvelopeVerifier", "dev.freshgenerator.audit.TechnicalWorldAudit"]},
   "depends": {"freshgenerator": "*", "fabric-api": "*"}
 }

@@ -12,7 +12,7 @@ jobs:
   build:
     if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,35 +25,30 @@ jobs:
         with:
           gradle-version: '9.8.2'
           cache-disabled: true
-      - name: Compile and verify one public world type
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle --no-daemon --console=plain clean build 2>&1 | tee build-validation.log
-      - name: Create and reopen FreshGenerator with completed neighbouring chunks
-        shell: bash
+      - name: Compile actual game dependencies and run all unit tests
+        run: gradle --no-daemon --console=plain clean build
+      - name: Create and reopen the single FreshGenerator world
         run: bash scripts/world_smoke.sh
-      - name: Print failed tests
+      - name: Audit corrected terrain, native density, structures and vanilla controls
+        run: bash scripts/terrain_fix_audit.sh
+      - name: Preserve detailed test failures
         if: failure()
         run: |
           python3 - <<'PY'
-          import pathlib, xml.etree.ElementTree as E
+          import pathlib,xml.etree.ElementTree as E
           for p in pathlib.Path('build/test-results/test').glob('TEST-*.xml'):
-              r=E.parse(p).getroot()
-              for c in r.findall('testcase'):
-                  for f in c.findall('failure')+c.findall('error'):
-                      print(p.name,c.get('name'),f.get('message'),(f.text or '')[:5000])
+            for c in E.parse(p).getroot().findall('testcase'):
+              for f in c.findall('failure')+c.findall('error'): print(p.name,c.get('name'),f.get('message'),(f.text or '')[:6000])
           PY
-      - name: Verify audited generation, package and evidence
+      - name: Require current terrain evidence and validate distributable
         run: python3 scripts/validate_release.py
-      - name: Publish checked technical update and source archive
-        shell: bash
+      - name: Commit checked binary and evidence
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
           if ! git diff --cached --quiet; then
-            git commit -m 'build: publish technical update and attributable validation evidence [skip ci]'
+            git commit -m 'build: publish verified coherent-terrain correction [skip ci]'
             git push origin "HEAD:$GITHUB_REF_NAME"
           fi
