@@ -3,6 +3,7 @@ package dev.freshgenerator;
 import com.google.gson.*;
 import dev.freshgenerator.pack.*;
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,16 +32,21 @@ class ResourceJsonTest {
         var a=WorldgenCatalog.compile(new VanillaAssets());var b=WorldgenCatalog.compile(new VanillaAssets());
         for(String key:a.keySet())assertEquals(ResourceJson.encode(a.get(key)),ResourceJson.encode(b.get(key)),key);
     }
-    @Test void allCurrentWorldDataRemainEquivalentToPublishedRelease() throws Exception {
-        var data=WorldgenCatalog.compile(new VanillaAssets());
-        try(var jar=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.2.1-alpha.1.jar")) {
+    @Test void onlyDeclaredActiveCorrectionResourcesMayDifferFromPublishedRelease() throws Exception {
+        var data=WorldgenCatalog.compile(new VanillaAssets());Set<String> changed=new HashSet<>();int added=0;
+        try(var jar=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.2.2-alpha.1.jar")) {
             for(var entry:data.entrySet()) {
-                var stored=jar.getEntry(entry.getKey());assertNotNull(stored,entry.getKey());
+                var stored=jar.getEntry(entry.getKey());
+                if(stored==null) {
+                    assertTrue(entry.getKey().startsWith(CoherentSurfaceCompiler.ROOT+"coherent/"),entry.getKey());
+                    added++;continue;
+                }
                 try(var in=jar.getInputStream(stored)) {
                     var before=JsonParser.parseString(new String(in.readAllBytes(),StandardCharsets.UTF_8));
-                    assertEquals(before,JsonParser.parseString(ResourceJson.encode(entry.getValue())),entry.getKey());
+                    if(!before.equals(JsonParser.parseString(ResourceJson.encode(entry.getValue()))))changed.add(entry.getKey());
                 }
             }
         }
+        assertEquals(CoherentSurfaceCompiler.REPLACED,changed);assertEquals(9,added);
     }
 }
