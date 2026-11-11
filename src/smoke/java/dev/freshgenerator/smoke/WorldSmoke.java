@@ -19,7 +19,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** Full dedicated-server test, not a pre-launch stub. Never included in the distributed JAR. */
+/** Full dedicated-server test. Never included in the distributed JAR. */
 public final class WorldSmoke implements ModInitializer {
     @Override public void onInitialize() {
         if (!Boolean.getBoolean("freshgenerator.integration")) return;
@@ -30,10 +30,11 @@ public final class WorldSmoke implements ModInitializer {
         });
     }
     private static void verify(MinecraftServer server) throws Exception {
+        String expected = Objects.requireNonNull(System.getenv("FG_EXPECTED_SETTINGS"));
+        if (expected.endsWith("_v2")) { NaturalWorldVerifier.verify(server, expected); return; }
         var level = server.overworld();
         if (!(level.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator generator))
             throw new AssertionError("Native noise generator not selected");
-        String expected = Objects.requireNonNull(System.getenv("FG_EXPECTED_SETTINGS"));
         String actual = generator.generatorSettings().unwrapKey().orElseThrow().toString();
         if (!actual.contains(expected)) throw new AssertionError("Preset fallback detected: " + actual);
         var settings = generator.generatorSettings().value();
