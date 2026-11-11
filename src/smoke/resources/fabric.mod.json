@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "freshgenerator_smoke",
+  "version": "1.0.0",
+  "name": "FreshGenerator test harness — never install",
+  "environment": "server",
+  "entrypoints": {"main": ["dev.freshgenerator.smoke.WorldSmoke"]},
+  "depends": {"freshgenerator": "*", "fabric-api": "*"}
+}

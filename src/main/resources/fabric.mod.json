@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "freshgenerator",
+  "version": "${version}",
+  "name": "FreshGenerator — Generation Core",
+  "description": "Versioned terrain composition with native biome and structure placement rules.",
+  "environment": "*",
+  "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator"]},
+  "authors": ["FreshGenerator contributors"],
+  "license": "MIT",
+  "depends": {"minecraft": "26.3", "java": ">=25", "fabricloader": ">=0.20.1", "fabric-api": "*"}
+}

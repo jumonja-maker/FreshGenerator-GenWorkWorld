@@ -1,0 +1,85 @@
+plugins { id 'net.fabricmc.fabric-loom' version '1.19.4' }
+group = project.group
+version = project.version
+base { archivesName = 'FreshGenerator-Fabric-26.3' }
+repositories { mavenCentral() }
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.12.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+sourceSets {
+    core { java.setSrcDirs(['src/core/java']) }
+    tool {
+        java.setSrcDirs(['src/tool/java'])
+        compileClasspath += sourceSets.core.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.core.output + configurations.runtimeClasspath
+    }
+    main {
+        compileClasspath += sourceSets.core.output
+        runtimeClasspath += sourceSets.core.output
+    }
+    test {
+        compileClasspath += sourceSets.core.output + sourceSets.tool.output
+        runtimeClasspath += sourceSets.core.output + sourceSets.tool.output
+    }
+    smoke {
+        java.setSrcDirs(['src/smoke/java'])
+        compileClasspath += sourceSets.main.output + sourceSets.core.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.core.output + configurations.runtimeClasspath
+    }
+}
+def generatedPack = layout.buildDirectory.dir('generated/worldgen')
+tasks.register('generateWorldgen', JavaExec) {
+    dependsOn coreClasses, toolClasses
+    classpath = sourceSets.tool.runtimeClasspath
+    mainClass = 'dev.freshgenerator.pack.GeneratePack'
+    args generatedPack.get().asFile.absolutePath
+    inputs.files(sourceSets.core.output, sourceSets.tool.output)
+    inputs.property 'minecraft', project.minecraft_version
+    outputs.dir generatedPack
+    doFirst { delete generatedPack }
+}
+sourceSets.main.resources.srcDir generatedPack
+processResources {
+    dependsOn generateWorldgen
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+java { sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25; withSourcesJar() }
+tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
+jar { from sourceSets.core.output }
+// Loom may also contribute these same source paths. The release gate verifies their presence.
+sourcesJar {
+    dependsOn generateWorldgen
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.core.allSource
+    from sourceSets.tool.allSource
+}
+test {
+    dependsOn toolClasses
+    useJUnitPlatform()
+    testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'full' }
+}
+check { dependsOn smokeClasses }
+tasks.register('apiProbe', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.freshgenerator.ApiProbe'
+}
+loom {
+    mods {
+        freshgenerator { sourceSet sourceSets.main; sourceSet sourceSets.core }
+        freshgenerator_smoke { sourceSet sourceSets.smoke }
+    }
+}
+if (System.getenv('FRESHGENERATOR_SMOKE') == 'true') {
+    loom.runs.named('server') {
+        source = sourceSets.smoke
+        vmArg '-Xmx3G'
+        vmArg '-Dfreshgenerator.integration=true'
+    }
+    tasks.matching { it.name == 'runServer' }.configureEach { dependsOn smokeClasses }
+}
