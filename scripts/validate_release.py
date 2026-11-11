@@ -57,7 +57,9 @@ for label in labels[:4]:
 for key in ['block_sha256','climate_sha256']:
     assert reports['world-new'][key]==reports['world-reload'][key]
 for label in ['world-new','world-reload']:
-    assert 'level-type=freshgenerator:world\n' in (p/f'{label}.properties').read_text()
+    # The server rewrites resource identifiers using Java Properties colon escaping.
+    properties=(p/f'{label}.properties').read_text().replace(chr(92)+':', ':')
+    assert 'level-type=freshgenerator:world\n' in properties, 'Wrong canonical level-type: '+repr(properties)
     assert reports[label]['settings']=='freshgenerator:highlands_v2'
 for label in labels[4:]:
     r=reports[label];assert r['core_vs_native_max_error']<=.02 and r['unchanged_climate_axis_samples']==2560

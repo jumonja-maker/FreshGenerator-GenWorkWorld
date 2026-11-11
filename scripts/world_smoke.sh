@@ -67,7 +67,9 @@ assert h['block_sha256']==r['block_sha256'], 'Single world target chunks changed
 assert h['climate_sha256']==r['climate_sha256']
 assert n['climate_sha256']!=o['climate_sha256'], 'World seed ignored'
 for label in ['world-new','world-reload']:
-    assert 'level-type=freshgenerator:world\n' in (p/(label+'.properties')).read_text()
+    # java.util.Properties.store escapes the colon in resource identifiers.
+    properties=(p/(label+'.properties')).read_text().replace(chr(92)+':', ':')
+    assert 'level-type=freshgenerator:world\n' in properties, 'Wrong canonical level-type: '+repr(properties)
     assert read(label)['settings']=='freshgenerator:highlands_v2', 'Fallback or wrong current settings'
 for x in [n,o,h,r]:
     assert x['core_vs_native_max_error']<=.02
