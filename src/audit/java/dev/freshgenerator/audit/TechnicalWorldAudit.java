@@ -42,6 +42,10 @@ public final class TechnicalWorldAudit implements ModInitializer {
 
     @Override public void onInitialize() {
         if(!Boolean.getBoolean("freshgenerator.audit"))return;
+        if ("biome-transitions".equals(System.getenv("FG_AUDIT_MODE"))) {
+            ServerLifecycleEvents.SERVER_STARTED.register(BiomeTransitionAudit::run);
+            return;
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(server->{
             boolean completed=false;
             try {run(server);completed=true;}

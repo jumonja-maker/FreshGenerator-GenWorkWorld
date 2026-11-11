@@ -1,0 +1,31 @@
+name: Audit biome and mountain transitions
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/biome-transition-audit.yml
+      - scripts/biome_transition_audit.sh
+      - src/audit/java/dev/freshgenerator/audit/BiomeTransitionAudit.java
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.2'
+          cache-disabled: true
+      - run: gradle --no-daemon --console=plain test
+      - run: bash scripts/biome_transition_audit.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: biome-transition-audit
+          path: build/reports/biome-transitions/

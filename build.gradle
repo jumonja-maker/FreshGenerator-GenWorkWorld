@@ -91,6 +91,7 @@ if (System.getenv('FRESHGENERATOR_SMOKE') == 'true') {
 if (System.getenv('FRESHGENERATOR_AUDIT') == 'true') {
     loom.runs.named('server') {
         source = sourceSets.audit
+        if (System.getenv('FG_AUDIT_RUN_DIR')) runDir System.getenv('FG_AUDIT_RUN_DIR')
         vmArg '-Xmx3G'
         vmArg '-Dfreshgenerator.audit=true'
     }
