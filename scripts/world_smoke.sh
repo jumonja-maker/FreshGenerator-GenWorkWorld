@@ -4,7 +4,7 @@ set -euo pipefail
 mkdir -p run build/reports/integration
 printf 'eula=true\n' > run/eula.txt
 run_world() {
-  local label="$1" world="$2" seed="$3" preset="$4" audit=false
+  local label="$1" world="$2" seed="$3" preset="$4" expected="${5:-$4}" audit=false
   if [ "$label" = other-seed ]; then audit=true; fi
   cat > run/server.properties <<EOF
 level-name=$world
@@ -19,12 +19,13 @@ max-tick-time=240000
 spawn-protection=0
 EOF
   rm -f run/freshgenerator-smoke.json run/freshgenerator-heightmap.csv run/freshgenerator-legacy-audit.json
-  FG_LEGACY_AUDIT="$audit" FG_EXPECTED_SETTINGS="$preset" FRESHGENERATOR_SMOKE=true timeout --signal=QUIT --kill-after=15s 360s \
+  FG_LEGACY_AUDIT="$audit" FG_EXPECTED_SETTINGS="$expected" FRESHGENERATOR_SMOKE=true timeout --signal=QUIT --kill-after=15s 360s \
     gradle --no-daemon --console=plain runServer > "build/reports/integration/$label.log" 2>&1 || {
       tail -n 180 "build/reports/integration/$label.log"; return 1;
     }
   grep 'FRESHGENERATOR_WORLD_PASS' "build/reports/integration/$label.log"
   cp run/freshgenerator-smoke.json "build/reports/integration/$label.json"
+  cp run/server.properties "build/reports/integration/$label.properties"
   if [ -f run/freshgenerator-heightmap.csv ]; then
     cp run/freshgenerator-heightmap.csv "build/reports/integration/$label.csv"
   fi
@@ -33,7 +34,7 @@ EOF
     cp run/freshgenerator-legacy-blocks.txt.gz build/reports/integration/legacy-current-blocks.txt.gz
   fi
 }
-# Audit the previously differing seed against a real historical build FIRST.
+# Historical names below are save-compatibility regressions, NOT selectable world modes.
 run_world other-seed smoke-other 1337 freshgenerator:balanced_v1
 bash scripts/legacy_audit.sh
 run_world balanced-new smoke-balanced 42 freshgenerator:balanced_v1
@@ -41,8 +42,9 @@ run_world balanced-reload smoke-balanced 42 freshgenerator:balanced_v1
 run_world highlands-new smoke-highlands 42 freshgenerator:highlands_v1
 run_world natural-new smoke-natural 42 freshgenerator:balanced_v2
 run_world natural-other-seed smoke-natural-other 1337 freshgenerator:balanced_v2
-run_world alpine-new smoke-alpine 42 freshgenerator:highlands_v2
-run_world alpine-reload smoke-alpine 42 freshgenerator:highlands_v2
+# Both creation and reopening use the ONE public world type, with checked internal settings.
+run_world world-new smoke-world 42 freshgenerator:world freshgenerator:highlands_v2
+run_world world-reload smoke-world 42 freshgenerator:world freshgenerator:highlands_v2
 python3 - <<'PY'
 import json,pathlib
 p=pathlib.Path('build/reports/integration')
@@ -60,14 +62,17 @@ for name in ['balanced-new','balanced-reload','other-seed','highlands-new']:
 (p/'historical-v1-comparison.json').write_text(json.dumps(historical,indent=2)+'\n')
 print('HISTORICAL_V1_FULL_BLOCK_COMPARISON '+json.dumps(historical))
 # Historical hash differences are recorded, never silently replaced. The exact source A/B above is a release gate.
-n,o,h,r=[read(x) for x in ['natural-new','natural-other-seed','alpine-new','alpine-reload']]
-assert h['block_sha256']==r['block_sha256'], 'V2 target chunks changed on reload'
+n,o,h,r=[read(x) for x in ['natural-new','natural-other-seed','world-new','world-reload']]
+assert h['block_sha256']==r['block_sha256'], 'Single world target chunks changed on reload'
 assert h['climate_sha256']==r['climate_sha256']
-assert n['climate_sha256']!=o['climate_sha256'], 'V2 world seed ignored'
+assert n['climate_sha256']!=o['climate_sha256'], 'World seed ignored'
+for label in ['world-new','world-reload']:
+    assert 'level-type=freshgenerator:world\n' in (p/(label+'.properties')).read_text()
+    assert read(label)['settings']=='freshgenerator:highlands_v2', 'Fallback or wrong current settings'
 for x in [n,o,h,r]:
     assert x['core_vs_native_max_error']<=.02
     assert x['unchanged_climate_axis_samples']==2560
     assert x['full_chunks_checked']>=9 and x['distinct_base_heights']>=3
     assert x['sampled_peak_uplift']>=4
-print('FRESHGENERATOR_INTEGRATION_PASS: historical-source A/B, v1 resources, v2 native mountain/boundary chunks and restart')
+print('FRESHGENERATOR_INTEGRATION_PASS: single public world create/reopen, historical save compatibility and native terrain checks')
 PY
