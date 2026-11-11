@@ -1,7 +1,13 @@
 name: Build generation core
-on: [push, workflow_dispatch]
+on:
+  push:
+    paths-ignore: ['dist/**']
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -16,5 +22,19 @@ jobs:
         with:
           gradle-version: '9.8.2'
           cache-disabled: true
-      - name: Compile against the real Minecraft and Fabric API
-        run: gradle --no-daemon --console=plain --stacktrace clean build apiProbe
+      - name: Compile generator graphs and test actual Minecraft data
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --console=plain clean apiProbe build 2>&1 | tee build-validation.log
+      - name: Print failed tests
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as E
+          for p in pathlib.Path('build/test-results/test').glob('TEST-*.xml'):
+              r=E.parse(p).getroot()
+              for c in r.findall('testcase'):
+                  for f in c.findall('failure')+c.findall('error'):
+                      print(p.name,c.get('name'),f.get('message'),(f.text or '')[:5000])
+          PY
