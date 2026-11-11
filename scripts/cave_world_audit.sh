@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Same observer on immutable reference and candidate, fresh worlds and fixed coordinates.
+# Unmodified A/A references, candidate and reload, with identical read-only observers.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 seed=${1:-42};scope=${2:-fresh};[[ "$seed" =~ ^-?[0-9]+$ ]];[[ "$scope" = fresh || "$scope" = normal ]]
@@ -21,8 +21,14 @@ p=pathlib.Path(sys.argv[1]);j=json.loads(p.read_text());j['entrypoints']['main']
 PY
  run="$tree/cave-run";mkdir -p "$run";printf 'eula=true\n'>"$run/eula.txt"
  preset=freshgenerator:world;[ "$scope" = normal ]&&preset=minecraft:normal
- cat > "$run/server.properties" <<EOF
-level-name=world
+ passes=2;[ "$mode" = reference ]&&[ "$scope" = normal ]&&passes=1
+ for ((i=1;i<=passes;i++));do
+  label=$mode;world=world
+  if [ "$i" = 2 ];then
+   if [ "$mode" = reference ];then label=reference-repeat;world=world-reference-repeat;else label=candidate-reload;fi
+  fi
+  cat > "$run/server.properties" <<EOF
+level-name=$world
 level-seed=$seed
 level-type=$preset
 generate-structures=false
@@ -34,9 +40,6 @@ simulation-distance=2
 max-tick-time=600000
 spawn-protection=0
 EOF
- passes=1;[ "$mode" = candidate ]&&passes=2
- for ((i=1;i<=passes;i++));do
-  label=$mode;[ "$i" = 2 ]&&label=candidate-reload
   log="$report/$label.log"
   if ! (cd "$tree";FRESHGENERATOR_AUDIT=true FG_AUDIT_RUN_DIR="$run" FG_CAVE_AUDIT=true FG_CAVE_MODE="$mode" FG_CAVE_PASS="$label" FG_CAVE_SCOPE="$scope" FG_CAVE_SOURCE="$source" FG_CAVE_COORDINATES="$report/coordinates.json" \
     timeout --signal=QUIT --kill-after=15s 1200s gradle --no-daemon --console=plain runServer > "$log" 2>&1);then tail -n 160 "$log";exit 1;fi

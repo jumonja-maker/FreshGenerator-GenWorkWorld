@@ -20,22 +20,34 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Compile native cave API and run all unit and metric tests
+      - name: Compile native cave API and test exact stage comparisons
+        id: compile
         run: |
           gradle --no-daemon --console=plain clean build
           python3 scripts/test_cave_audit_metrics.py
-      - name: Paired surface openings seed 42 and save reload
+          python3 scripts/test_cave_full_stage_checks.py
+      - name: Repeated reference, candidate and reload on seed 42
+        id: seed42
+        continue-on-error: true
         run: bash scripts/cave_world_audit.sh 42 fresh
-      - name: Paired surface openings seed 1337 and save reload
+      - name: Repeated reference, candidate and reload on seed 1337
+        id: seed1337
+        continue-on-error: true
         run: bash scripts/cave_world_audit.sh 1337 fresh
-      - name: Paired surface openings seed -20261111 and save reload
+      - name: Repeated reference, candidate and reload on seed -20261111
+        id: seednegative
+        continue-on-error: true
         run: bash scripts/cave_world_audit.sh -20261111 fresh
       - name: Ordinary Minecraft scope and save reload
+        id: normal
+        continue-on-error: true
         run: bash scripts/cave_world_audit.sh 42 normal
       - name: Structures and connected terrain with vanilla controls
+        id: structures
+        continue-on-error: true
         run: bash scripts/terrain_fix_audit.sh
-      - name: Preserve exact failure context
-        if: failure()
+      - name: Preserve observed stage and surface counts
+        if: always()
         run: |
           python3 - <<'PY'
           import pathlib,json,xml.etree.ElementTree as E
@@ -45,10 +57,19 @@ jobs:
           for p in pathlib.Path('build/reports/caves').rglob('*.json'):
             if p.name=='coordinates.json': continue
             r=json.loads(p.read_text())
-            print('CAVE_FAILURE_EVIDENCE',p,json.dumps({'seed':r.get('seed'),'telemetry':r.get('telemetry'),'regions':[{k:w.get(k) for k in ['label','x','z','dry_opening_columns','noise_only_opening_columns','deep_air_samples','submerged_envelope_columns']} for w in r.get('regions',[])]}))
+            print('CAVE_RUN_EVIDENCE',p,json.dumps({'seed':r.get('seed'),'telemetry':r.get('telemetry'),'regions':[{k:w.get(k) for k in ['label','x','z','dry_opening_columns','opening_columns_before','opening_columns_after','noise_only_opening_columns','deep_air_samples','submerged_envelope_columns']} for w in r.get('regions',[])]}))
           PY
-      - name: Require reduced openings and preserved deep caves
-        run: python3 scripts/validate_cave_release.py
+      - name: Require every audit outcome and validate installable release
+        env:
+          AUDIT_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          steps=json.loads(os.environ['AUDIT_OUTCOMES'])
+          for name in ['compile','seed42','seed1337','seednegative','normal','structures']:
+            assert steps[name]['outcome']=='success', ('Audit failed; publication forbidden',name,steps[name])
+          PY
+          python3 scripts/validate_cave_release.py
       - name: Publish checked binary and paired evidence
         run: |
           set -euo pipefail
