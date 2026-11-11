@@ -30,7 +30,9 @@ class SingleWorldTest {
                 assertNotNull(files.get(name),name);
                 try(var input=zip.getInputStream(entry)) {
                     var before=JsonParser.parseString(new String(input.readAllBytes(),StandardCharsets.UTF_8));
-                    if(!before.equals(files.get(name)))changed.add(name);
+                    // Compare the actual resource representation, not Java Float versus parsed Double.
+                    var after=JsonParser.parseString(ResourceJson.encode(files.get(name)));
+                    if(!before.equals(after))changed.add(name);
                 }checked++;
             }
         }
