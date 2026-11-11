@@ -1,6 +1,3 @@
 {
-  "generator.freshgenerator.balanced_v1": "FreshGenerator: Balanced (legacy v1)",
-  "generator.freshgenerator.highlands_v1": "FreshGenerator: Highlands (legacy v1)",
-  "generator.freshgenerator.balanced_v2": "FreshGenerator: Natural landscapes v2",
-  "generator.freshgenerator.highlands_v2": "FreshGenerator: Alpine ranges v2"
+  "generator.freshgenerator.world": "FreshGenerator"
 }
