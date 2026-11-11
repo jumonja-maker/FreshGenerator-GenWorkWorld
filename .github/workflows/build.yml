@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -28,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon --console=plain clean build 2>&1 | tee build-validation.log
-      - name: Create and reopen FreshGenerator; verify historical save compatibility
+      - name: Create and reopen FreshGenerator with completed neighbouring chunks
         shell: bash
         run: bash scripts/world_smoke.sh
       - name: Print failed tests
@@ -42,9 +44,9 @@ jobs:
                   for f in c.findall('failure')+c.findall('error'):
                       print(p.name,c.get('name'),f.get('message'),(f.text or '')[:5000])
           PY
-      - name: Validate distributable and write evidence
+      - name: Verify audited generation, package and evidence
         run: python3 scripts/validate_release.py
-      - name: Publish tested alpha and source archive
+      - name: Publish checked technical update and source archive
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +54,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
           if ! git diff --cached --quiet; then
-            git commit -m 'build: publish single-world FreshGenerator and validation evidence [skip ci]'
+            git commit -m 'build: publish technical update and attributable validation evidence [skip ci]'
             git push origin "HEAD:$GITHUB_REF_NAME"
           fi

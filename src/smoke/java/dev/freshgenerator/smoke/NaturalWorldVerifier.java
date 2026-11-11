@@ -16,7 +16,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** Actual native mountain and biome-boundary sampling, plus FULL target chunks. No render mock. */
+/** Native mountain/boundary sampling. A FULL halo is loaded before taking an immutable observation. */
 final class NaturalWorldVerifier {
     private static DensityFunction function(MinecraftServer server,String id) {
         return server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION)
@@ -50,11 +50,9 @@ final class NaturalWorldVerifier {
                 bits.clear();bits.putFloat(value);climate.update(bits.array());compared++;
             }
         }
-        // Locate a real seeded mountain, rather than inspecting only the spawn plains.
         int bx=0,bz=0;float best=-Float.MAX_VALUE;
         for(int ix=-32;ix<=32;ix++)for(int iz=-32;iz<=32;iz++) {
-            int x=ix*512,z=iz*512;
-            float value=state.sampleBlockValueUncached(delta,x,96,z);
+            int x=ix*512,z=iz*512;float value=state.sampleBlockValueUncached(delta,x,96,z);
             if(value>best){best=value;bx=x;bz=z;}
         }
         if(best<4)throw new AssertionError("No meaningful mountain uplift in the sampled region");
@@ -73,7 +71,6 @@ final class NaturalWorldVerifier {
         if(distinct.size()<3)throw new AssertionError("Mountain sample is unexpectedly flat");
         Set<Long> chunks=new LinkedHashSet<>();
         for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)chunks.add(pack(Math.floorDiv(bx,16)+dx,Math.floorDiv(bz,16)+dz));
-        // Search actual surface-biome changes around that mountain and inspect both sides.
         String previous=null;int previousX=0,previousZ=0;int boundaryPairs=0;
         Set<String> biomes=new TreeSet<>();
         for(int i=-8;i<=8;i++) {
@@ -93,6 +90,14 @@ final class NaturalWorldVerifier {
                 previous=biome;previousX=x;previousZ=z;
             }
         }
+        // Complete neighbour decorations BEFORE any target block enters the digest.
+        // Never compare a partially observed target against a later fully decorated reload.
+        Set<Long> preloaded=new LinkedHashSet<>();
+        for(long key:chunks) {
+            int cx=(int)(key>>32),cz=(int)key;
+            for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)preloaded.add(pack(cx+dx,cz+dz));
+        }
+        for(long key:preloaded)level.getChunk((int)(key>>32),(int)key);
         MessageDigest blocks=MessageDigest.getInstance("SHA-256");Map<BlockState,byte[]> strings=new IdentityHashMap<>();
         BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();int solid=0,air=0,water=0;
         for(long key:chunks) {
@@ -110,13 +115,14 @@ final class NaturalWorldVerifier {
         r.addProperty("core_vs_native_max_error",errorMax);r.addProperty("unchanged_climate_axis_samples",compared);
         r.addProperty("climate_sha256",HexFormat.of().formatHex(climate.digest()));
         r.addProperty("full_chunks_checked",chunks.size());r.addProperty("block_sha256",HexFormat.of().formatHex(blocks.digest()));
+        r.addProperty("preloaded_full_chunks",preloaded.size());r.addProperty("block_hash_scope","target plus one FULL chunk halo before digest; not the historical pre-halo observation");
         r.addProperty("solid",solid);r.addProperty("air",air);r.addProperty("water",water);
         r.addProperty("mountain_center_x",bx);r.addProperty("mountain_center_z",bz);r.addProperty("sampled_peak_uplift",best);
         r.addProperty("heightmap_columns",289);r.addProperty("min_base_height",min);r.addProperty("max_base_height",max);
         r.addProperty("distinct_base_heights",distinct.size());r.addProperty("mean_height_step_per_16_blocks",slopeSum/slopes);
         r.addProperty("max_height_step_per_16_blocks",largestStep);r.addProperty("surface_biome_boundary_pairs_sampled",boundaryPairs);
         r.add("surface_biomes_near_mountain",new Gson().toJsonTree(biomes));
-        r.addProperty("scope","actual native heights and FULL mountain/boundary chunks; no client image or aesthetics claim");
+        r.addProperty("scope","native heights and FULL mountain/boundary chunks; no client image or aesthetics claim");
         Files.writeString(Path.of("freshgenerator-smoke.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));
         Files.writeString(Path.of("freshgenerator-heightmap.csv"),csv);
         System.out.println("FRESHGENERATOR_WORLD_PASS "+r);

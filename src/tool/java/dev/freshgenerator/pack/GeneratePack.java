@@ -3,20 +3,24 @@ package dev.freshgenerator.pack;
 import com.google.gson.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 
-/** Builds one public FreshGenerator world and hidden compatibility resources for existing saves. */
+/** Builds one public world; deterministic resource bytes and fingerprints improve regression auditing. */
 public final class GeneratePack {
     public static void main(String[] args) throws Exception {
         if (args.length != 1) throw new IllegalArgumentException("Usage: GeneratePack <output directory>");
         Path destination = Path.of(args[0]);
-        Gson gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+        Gson gson = new Gson();
         VanillaAssets vanilla = new VanillaAssets();
         var files = WorldgenCatalog.compile(vanilla);
+        Map<String,String> generatedHashes = new TreeMap<>();
         for (var file : files.entrySet()) {
             Path path = destination.resolve(file.getKey());
             Files.createDirectories(path.getParent());
-            Files.writeString(path, gson.toJson(file.getValue()) + "\n", StandardCharsets.UTF_8);
+            byte[] bytes = ResourceJson.encode(file.getValue()).getBytes(StandardCharsets.UTF_8);
+            Files.write(path, bytes);
+            generatedHashes.put(file.getKey(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
         }
         JsonObject manifest = new JsonObject();
         manifest.addProperty("minecraft", "26.3");
@@ -26,7 +30,8 @@ public final class GeneratePack {
         manifest.addProperty("current_internal_settings", WorldgenCatalog.CURRENT_SETTINGS);
         manifest.addProperty("legacy_presets", "hidden; existing-save compatibility only");
         manifest.add("source_sha256", gson.toJsonTree(vanilla.fingerprints()));
-        Files.writeString(destination.resolve("freshgenerator-worldgen-manifest.json"), gson.toJson(manifest) + "\n");
+        manifest.add("generated_sha256", gson.toJsonTree(generatedHashes));
+        Files.writeString(destination.resolve("freshgenerator-worldgen-manifest.json"), ResourceJson.encode(manifest), StandardCharsets.UTF_8);
         System.out.println("FRESHGENERATOR_PACK_PASS entries=" + files.size()
                 + " nativeAssets=" + vanilla.fingerprints().size() + " selectableWorld=FreshGenerator");
     }
