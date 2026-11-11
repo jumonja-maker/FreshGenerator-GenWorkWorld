@@ -27,10 +27,10 @@ jobs:
           cache-disabled: true
       - name: Compile native game and test deterministic transition model
         run: gradle --no-daemon --console=plain clean build
-      - name: Compare published terrain with candidate at identical biome junctions
-        run: bash scripts/fixed_ecotone_audit.sh
-      - name: Create and reopen the single FreshGenerator world
+      - name: Controlled historical A-A-B and single world save-reload
         run: bash scripts/world_smoke.sh
+      - name: Compare identical biome junctions before and after
+        run: bash scripts/fixed_ecotone_audit.sh
       - name: Recheck mountains and structures against vanilla controls
         run: bash scripts/terrain_fix_audit.sh
       - name: Search biome junctions on corrected worlds
