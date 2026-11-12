@@ -1,0 +1,69 @@
+name: Prepare isolated hydrology debugging tools
+on:
+  push:
+    branches: [review/hydrology-evidence]
+    paths: [.github/workflows/hydrology-local-toolchain.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Compile and export only public runtime dependencies
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d" offline/classpath
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          cat > /tmp/review-export.gradle <<'GRADLE'
+          allprojects {
+            afterEvaluate {
+              tasks.register('exportReviewClasspath') {
+                dependsOn testClasses, hydrologyAuditJar
+                doLast {
+                  def jars = sourceSets.test.runtimeClasspath.files.findAll { it.isFile() && it.name.endsWith('.jar') }.sort { it.absolutePath }
+                  def dest = new File(projectDir, 'offline/classpath')
+                  jars.eachWithIndex { file, i ->
+                    copy { from file; into dest; rename { String.format('%03d-', i) + file.name } }
+                  }
+                }
+              }
+            }
+          }
+          GRADLE
+          gradle --no-daemon --console=plain -I /tmp/review-export.gradle clean build exportReviewClasspath
+      - name: Prepare clean native server libraries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/hydrology_world_audit.sh')
+          s = p.read_text().replace("trap 'rm -rf -- \"$scratch\"' EXIT", "printf '%s\\n' \"$scratch\" > build/review-scratch-path")
+          p.write_text(s)
+          PY
+          FG_HYDROLOGY_SKIP_BUILD=true FG_HYDROLOGY_RUNS=candidate FG_HYDROLOGY_PARTIAL=true bash scripts/hydrology_world_audit.sh 42
+          scratch=$(cat build/review-scratch-path)
+          mkdir -p offline/native
+          cp -r "$scratch/libraries" offline/native/libraries
+          cp "$scratch/launcher.jar" offline/native/launcher.jar
+          cp build/hydrology-audit/*.jar offline/native/
+          cp build/libs/*.jar offline/native/
+          cp -r build/classes build/generated offline/
+          cp -r build/resources offline/
+          cp -r build/reports/hydrology offline/bootstrap-reports
+      - name: Package JVM and debugging data without credentials or repository settings
+        run: |
+          mkdir -p exports
+          tar -czf exports/java25-runtime.tar.gz -C "$JAVA_HOME" .
+          tar -czf exports/hydrology-debug-runtime.tar.gz -C offline .
+          sha256sum exports/*.tar.gz > exports/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-local-debug-runtime
+          path: exports/
+          if-no-files-found: error
+          retention-days: 1
