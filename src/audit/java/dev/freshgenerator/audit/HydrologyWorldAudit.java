@@ -101,9 +101,11 @@ public final class HydrologyWorldAudit implements ModInitializer {
         if (concurrent || mode.equals("reverse")) Collections.reverse(order);
         long generationStart = System.nanoTime();
         boolean normal = mode.startsWith("normal-");
+        boolean distantHorizons = mode.equals("distant-horizons");
         boolean reverseFeatures = mode.equals("normal-repeat-2");
         var terrain = normal ? decorateInOrder(level, plan, order, reverseFeatures) : List.of();
-        var chunks = load(server, level, order, concurrent);
+        var chunks = distantHorizons ? DistantHorizonsAudit.load(server, level, plan.windows)
+                : load(server, level, order, concurrent);
         long generationNanos = System.nanoTime() - generationStart;
         List<Observation> observations = new ArrayList<>();
         boolean candidateHydrology = !normal && !mode.endsWith("baseline");
@@ -126,6 +128,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         result.put("java", Runtime.version().toString());
         result.put("distant_horizons", FabricLoader.getInstance().getModContainer("distanthorizons")
                 .map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse(""));
+        result.put("distant_horizons_full_chunks", distantHorizons ? chunks.size() : 0);
         result.put("terrain_before_features", terrain);
         result.put("feature_order", normal ? (reverseFeatures ? "reverse" : "forward") : "scheduler");
         result.put("windows", observations);

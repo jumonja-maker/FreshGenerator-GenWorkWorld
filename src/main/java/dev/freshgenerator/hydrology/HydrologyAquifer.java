@@ -71,8 +71,13 @@ public final class HydrologyAquifer implements Aquifer {
             sealZ = z;
             hasSeal = true;
         }
-        for (int profile : sealProfiles) {
-            if (withinSeal(profile, y)) return true;
+        if (withinSeal(sealProfiles[0], y)) return true;
+        for (int i = 1; i < sealProfiles.length; i++) {
+            int profile = sealProfiles[i];
+            // Below the adjoining channel bed, its own solid seal already
+            // separates the water from any cave under the dry bank.
+            if (profile != DrainageModel.DRY && y > DrainageModel.floor(profile)
+                    && y <= DrainageModel.waterTop(profile)) return true;
         }
         return false;
     }

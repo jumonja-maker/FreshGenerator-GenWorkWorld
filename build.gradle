@@ -106,6 +106,7 @@ tasks.register('hydrologyAuditJar', Jar) {
     from(sourceSets.audit.output) {
         include 'dev/freshgenerator/audit/HydrologyWorldAudit*.class'
         include 'dev/freshgenerator/audit/HydrologyAuditProfiles*.class'
+        include 'dev/freshgenerator/audit/DistantHorizonsAudit.class'
     }
     from 'src/audit/hydrology'
 }

@@ -207,6 +207,8 @@ def compare(folder, sha, seed, *, require_dh=False):
     if require_dh:
         dh = observed['distant-horizons']
         require(dh['distant_horizons'] == '3.3.4', 'Distant Horizons was not loaded')
+        require(dh['distant_horizons_full_chunks'] >= candidate['full_chunks'],
+                'Distant Horizons did not generate all sampled FULL chunks')
         require(hydrology_signature(candidate) == hydrology_signature(dh),
                 'Hydrology changed with Distant Horizons installed')
     rows = [window_metrics(a, b) for a, b in zip(candidate['windows'], reference['windows'])]
@@ -231,6 +233,7 @@ def compare(folder, sha, seed, *, require_dh=False):
         'water_matches_reverse_parallel_and_reload': True,
         'normal_world_control': normal_control,
         'distant_horizons_installed_equal': require_dh,
+        'distant_horizons_generated_full_chunks': observed['distant-horizons']['distant_horizons_full_chunks'] if require_dh else 0,
         'observations_sha256': hashlib.sha256((folder / 'candidate.json').read_bytes()).hexdigest(),
         'windows': rows,
     }

@@ -21,12 +21,14 @@ class HydrologyAquiferTest {
         return (top << 16) | ((floor & 0x3fff) << 2);
     }
 
-    private static boolean oldProtects(IntBinaryOperator source, int x, int y, int z) {
+    private static boolean uncachedProtection(IntBinaryOperator source, int x, int y, int z) {
         if (y < SEA - 23) return false;
-        int[] profiles = {source.applyAsInt(x, z), source.applyAsInt(x - 1, z),
+        int own = source.applyAsInt(x, z);
+        if (own != DrainageModel.DRY && y >= DrainageModel.floor(own) - 4 && y <= DrainageModel.waterTop(own) + 1) return true;
+        int[] profiles = {source.applyAsInt(x - 1, z),
                 source.applyAsInt(x + 1, z), source.applyAsInt(x, z - 1), source.applyAsInt(x, z + 1)};
         for (int p : profiles) {
-            if (p != DrainageModel.DRY && y >= DrainageModel.floor(p) - 4 && y <= DrainageModel.waterTop(p) + 1) return true;
+            if (p != DrainageModel.DRY && y > DrainageModel.floor(p) && y <= DrainageModel.waterTop(p)) return true;
         }
         return false;
     }
@@ -41,10 +43,21 @@ class HydrologyAquiferTest {
         for (int z = -18; z <= 18; z++) {
             for (int x = -18; x <= 18; x++) {
                 for (int y = -64; y <= 320; y++) {
-                    assertEquals(oldProtects(source, x, y, z), aquifer.protects(x, y, z));
+                    assertEquals(uncachedProtection(source, x, y, z), aquifer.protects(x, y, z));
                 }
             }
         }
+    }
+
+    @Test
+    void aDryBankProtectsItsWaterlineAndRetainsTheNativeCaveBelow() {
+        var aquifer = new HydrologyAquifer(NATIVE,
+                (x, z) -> x == -1 && z == 0 ? profile(59, 62) : DrainageModel.DRY, SEA);
+        assertFalse(aquifer.protects(0, 56, 0));
+        assertFalse(aquifer.protects(0, 59, 0));
+        assertTrue(aquifer.protects(0, 60, 0));
+        assertTrue(aquifer.protects(0, 62, 0));
+        assertTrue(aquifer.protects(-1, 56, 0));
     }
 
     @Test
