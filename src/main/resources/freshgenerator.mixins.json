@@ -8,7 +8,12 @@
     "CaveCarverMixin",
     "NoiseChunkVillageMixin",
     "VillageTerrainMixin",
-    "VillageLakeMixin"
+    "VillageLakeMixin",
+    "RandomStateHydrologyMixin",
+    "ClimateSamplerHydrologyMixin",
+    "BiomeSourceHydrologyMixin",
+    "NoiseChunkHydrologyMixin",
+    "HydrologyCarverMixin"
   ],
   "injectors": { "defaultRequire": 1 }
 }

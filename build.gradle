@@ -97,3 +97,15 @@ if (System.getenv('FRESHGENERATOR_AUDIT') == 'true') {
     }
     tasks.matching { it.name == 'runServer' }.configureEach { dependsOn auditClasses }
 }
+
+// The same test observer runs against published and candidate JARs in clean servers.
+tasks.register('hydrologyAuditJar', Jar) {
+    dependsOn auditClasses
+    archiveFileName = 'hydrology-audit.jar'
+    destinationDirectory = layout.buildDirectory.dir('hydrology-audit')
+    from(sourceSets.audit.output) {
+        include 'dev/freshgenerator/audit/HydrologyWorldAudit*.class'
+        include 'dev/freshgenerator/audit/HydrologyAuditProfiles*.class'
+    }
+    from 'src/audit/hydrology'
+}

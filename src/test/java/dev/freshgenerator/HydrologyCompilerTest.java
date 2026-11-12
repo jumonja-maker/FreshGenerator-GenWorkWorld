@@ -2,6 +2,7 @@ package dev.freshgenerator;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
+import dev.freshgenerator.pack.BiomeRegionCompiler;
 import dev.freshgenerator.pack.CoherentSurfaceCompiler;
 import dev.freshgenerator.pack.HydrologyCompiler;
 import dev.freshgenerator.pack.VanillaAssets;
@@ -30,14 +31,15 @@ class HydrologyCompilerTest {
     }
 
     @Test
-    void changesOnlyTheActiveHeightAndCaveWeightAndAddsThreePrivateResources() {
+    void changesOnlyHydrologyInputsAndAddsFivePrivateResources() {
         Set<String> changed = new HashSet<>();
         baseline.forEach((path, original) -> {
             assertTrue(candidate.containsKey(path), path);
             if (!original.equals(candidate.get(path))) changed.add(path);
         });
-        assertEquals(Set.of(HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT), changed);
-        assertEquals(baseline.size() + 3, candidate.size());
+        assertEquals(Set.of(HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, BiomeRegionCompiler.SETTINGS,
+                HydrologyCompiler.BIOME_DEPTH, HydrologyCompiler.BIOME_TEMPERATURE, HydrologyCompiler.BIOME_MOISTURE), changed);
+        assertEquals(baseline.size() + 5, candidate.size());
         assertEquals(baseline.get(HydrologyCompiler.HEIGHT), candidate.get(path(HYDROLOGY + "base_height")));
         assertEquals(baseline.get(HydrologyCompiler.CAVE_WEIGHT), candidate.get(path(HYDROLOGY + "base_cave_weight")));
     }
@@ -47,11 +49,20 @@ class HydrologyCompilerTest {
         var blend = candidate.get(path(HYDROLOGY + "cut")).getAsJsonObject()
                 .getAsJsonObject("input");
         assertEquals("minecraft:blend_alpha", blend.getAsJsonObject("left").get("type").getAsString());
-        var drainage = blend.getAsJsonObject("right");
+        assertEquals(HYDROLOGY + "model", blend.get("right").getAsString());
+        var drainage = candidate.get(path(HYDROLOGY + "model")).getAsJsonObject().getAsJsonObject("input");
         assertEquals("freshgenerator:drainage", drainage.get("type").getAsString());
         assertEquals(HYDROLOGY + "base_height", drainage.get("terrain").getAsString());
         assertEquals(P + "continents", drainage.get("continents").getAsString());
+        assertEquals(P + "vegetation", drainage.get("moisture").getAsString());
         assertEquals(63, drainage.get("sea_level").getAsInt());
+        assertEquals(32, drainage.get("height_grid").getAsInt());
+        var settings = candidate.get(BiomeRegionCompiler.SETTINGS).deepCopy().getAsJsonObject();
+        var debug = settings.getAsJsonArray("debug_functions");
+        var binding = debug.remove(debug.size() - 1).getAsJsonObject();
+        assertEquals("FreshGenerator drainage", binding.get("label").getAsString());
+        assertEquals(HYDROLOGY + "model", binding.get("function").getAsString());
+        assertEquals(baseline.get(BiomeRegionCompiler.SETTINGS), settings);
     }
 
     @Test
@@ -61,7 +72,7 @@ class HydrologyCompilerTest {
         assertTrue(caveWeight(12, 56, 8) > 0 && caveWeight(12, 56, 8) < 1);
         assertEquals(1, caveWeight(12, 56, 12), 1e-5);
         assertEquals(1, caveWeight(0, 56, 0), 1e-5);
-        assertEquals(1, caveWeight(10, 62, 0), 1e-5);
+        assertEquals(0, caveWeight(0.25, 110, 0), 1e-5);
     }
 
     @Test

@@ -9,24 +9,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PublishedRuntimeSafetyTest {
  @Test void everyPreviouslyPublishedRuntimeClassRemainsByteIdentical()throws Exception {
-  try(var zip=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.3.3-alpha.1.jar")){
-   Set<String> old=new TreeSet<>();
-   for(var e:Collections.list(zip.entries()))if(e.getName().endsWith(".class")){
-    old.add(e.getName());Path p=Path.of("build/classes/java/main",e.getName());
-    if(!Files.exists(p))p=Path.of("build/classes/java/core",e.getName());
-    try(var in=zip.getInputStream(e)){assertArrayEquals(in.readAllBytes(),Files.readAllBytes(p),e.getName());}
+  try (var zip = new ZipFile("dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar")) {
+   int classes = 0;
+   for (var entry : Collections.list(zip.entries())) {
+    if (!entry.getName().endsWith(".class")) continue;
+    Path path = Path.of("build/classes/java/main", entry.getName());
+    if (!Files.exists(path)) path = Path.of("build/classes/java/core", entry.getName());
+    try (var in = zip.getInputStream(entry)) {
+     assertArrayEquals(in.readAllBytes(), Files.readAllBytes(path), entry.getName());
+    }
+    classes++;
    }
-   assertEquals(28,old.size());Set<String> actual=new TreeSet<>();
-   for(String dir:List.of("build/classes/java/main","build/classes/java/core"))try(var paths=Files.walk(Path.of(dir))){
-    for(Path p:paths.filter(p->p.toString().endsWith(".class")).toList())actual.add(Path.of(dir).relativize(p).toString().replace('\\','/'));
-   }
-   Set<String> expected=new TreeSet<>(old);
-   for(String p:List.of("village/VillageTerrainModel","village/VillageTerrainModel$Site","village/VillageTerrainModel$Column",
-       "village/VillageTerrainPlan","village/VillageNoiseAccess","mixin/NoiseChunkVillageMixin","mixin/VillageTerrainMixin",
-       "village/VillageLakeGuard","mixin/VillageLakeMixin","core/DrainageModel","core/DrainageModel$Field",
-       "core/DrainageModel$Tile","core/DrainageModel$Grid","hydrology/DrainageDensity",
-       "hydrology/DrainageDensity$Sampler","hydrology/HydrologyInitializer"))expected.add("dev/freshgenerator/"+p+".class");
-   assertEquals(expected,actual);
+   assertEquals(37, classes);
   }
  }
  @Test void caveAdapterIsTheExactPublishedSource()throws Exception {

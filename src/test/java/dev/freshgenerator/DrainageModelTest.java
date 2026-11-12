@@ -3,58 +3,113 @@ package dev.freshgenerator;
 import dev.freshgenerator.core.DrainageModel;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static dev.freshgenerator.core.DrainageModel.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DrainageModelTest {
     private static final int SEA = 63;
     private static final long SEED = 42;
-    private static final DrainageModel.Field LAND = (x, z) -> 0.2f;
-    private static final DrainageModel.Field VALLEY = (x, z) -> 83 - 0.11f * z + 0.18f * Math.abs(x - 64);
+    private static final Field LAND = (x, z) -> 0.2f;
+    private static final Field VALLEY = (x, z) -> 105 - 0.055f * z + Math.min(5f, 0.18f * Math.abs(x - 64));
+
+    private static DrainageModel model(Field terrain, Field continents, float moisture) {
+        return new DrainageModel(SEED, SEA, () -> new Fields(terrain, continents, (x, z) -> moisture));
+    }
 
     @Test
-    void runoffConvergesIntoTheDownhillValley() {
-        var tile = DrainageModel.build(0, 0, SEED, SEA, VALLEY, LAND);
-        for (int z : new int[]{16, 40, 64, 88, 112}) {
-            float channel = 0;
-            for (int x = 59; x <= 69; x++) channel = Math.max(channel, tile.cutAt(x, z));
-            assertTrue(channel > 1.5f, "No downstream channel at z=" + z);
-            assertTrue(tile.cutAt(36, z) < channel, "Bank was cut as much as the valley at z=" + z);
+    void waterFollowsTheHighValleyAndDischargeIncludesMoreThanNineSteps() {
+        var model = model(VALLEY, LAND, 0);
+        assertTrue(model.discharge(4, 24) > 80, "Long upstream valley did not contribute");
+        assertEquals(MAX_FLOW, model.discharge(4, 160));
+        Tile tile = model.tile(0, 0);
+        int last = 1000;
+        for (int z = 8; z <= 120; z += 8) {
+            int top = Integer.MIN_VALUE;
+            for (int x = 58; x <= 70; x++) {
+                int profile = tile.waterAt(x, z);
+                if (profile != DRY) {
+                    assertTrue(floor(profile) < waterTop(profile));
+                    top = Math.max(top, waterTop(profile));
+                }
+            }
+            assertTrue(top > 90, "No high channel at z=" + z);
+            assertTrue(top <= last + 1, "Uphill stage at z=" + z);
+            last = top;
+            assertEquals(DRY, tile.waterAt(34, z));
         }
     }
 
     @Test
-    void aClosedBasinCanHoldALakeAndAnOpenValleyDoesNotReceiveTheSameBasinCut() {
-        DrainageModel.Field bowl = (x, z) -> 72 + 0.18f * (float) Math.hypot(x - 64, z - 64);
-        DrainageModel.Field open = (x, z) -> 72 + 0.18f * Math.abs(x - 64) + 0.08f * (z - 64);
-        var lake = DrainageModel.build(0, 0, SEED, SEA, bowl, LAND);
-        var outlet = DrainageModel.build(0, 0, SEED, SEA, open, LAND);
-        assertTrue(bowl.at(64, 64) - lake.cutAt(64, 64) < SEA - 1);
-        assertTrue(lake.cutAt(64, 64) > outlet.cutAt(64, 64) + 2);
-        assertTrue(bowl.at(100, 64) - lake.cutAt(100, 64) >= SEA);
+    void aNaturalDepressionHasAFlatWaterSurfaceAboveSeaLevel() {
+        Field bowl = (x, z) -> 83 + (float) Math.hypot(0.22 * (x - 64), 0.34 * (z - 64));
+        Tile lake = model(bowl, LAND, 0.5f).tile(0, 0);
+        int profile = lake.waterAt(64, 64);
+        assertTrue(isLake(profile));
+        assertTrue(waterTop(profile) > SEA + 10);
+        assertEquals(waterTop(profile), waterTop(lake.waterAt(67, 65)));
+        assertTrue(floor(profile) < waterTop(profile) - 1);
+        assertFalse(isLake(lake.waterAt(20, 20)));
+        Tile valley = model(VALLEY, LAND, 0.5f).tile(0, 0);
+        assertFalse(isLake(valley.waterAt(64, 64)));
     }
 
     @Test
-    void neighbouringTilesAgreeExactlyOnTheirSharedEdgesAtNegativeCoordinates() {
-        DrainageModel.Field valley = (x, z) -> 74 - 0.06f * z + 0.13f * Math.abs(x + 8);
-        var left = DrainageModel.build(-1, -1, SEED, SEA, valley, LAND);
-        var right = DrainageModel.build(0, -1, SEED, SEA, valley, LAND);
-        var below = DrainageModel.build(-1, 0, SEED, SEA, valley, LAND);
-        for (int i = -DrainageModel.TILE_SIZE; i <= 0; i++) {
-            assertEquals(left.cutAt(0, i), right.cutAt(0, i), 0);
-            assertEquals(left.cutAt(i, 0), below.cutAt(i, 0), 0);
+    void wetBasinSpillsIntoTheLowerCatchmentWhileTheClosedBasinRetainsItsWater() {
+        Field bowl = (x, z) -> 83 + (float) Math.hypot(0.18 * (x - 64), 0.32 * (z - 64));
+        Field saddle = (x, z) -> Math.min(bowl.at(x, z), 110 - 0.25f * x + 0.4f * Math.abs(z - 64));
+        var network = model(saddle, LAND, 0.5f);
+        Tile tile = network.tile(0, 0);
+        int lake = tile.waterAt(64, 64);
+        assertTrue(isLake(lake) && hasSpillway(lake));
+        assertTrue(waterTop(lake) > SEA);
+        assertEquals(MAX_FLOW, network.discharge(8, 4), "Spill discharge must continue beyond the outlet");
+        int previous = waterTop(lake);
+        for (int x = 64; x <= 124; x++) {
+            int profile = tile.waterAt(x, 64);
+            assertNotEquals(DRY, profile, "Disconnected spill channel at x=" + x);
+            int y = waterTop(profile);
+            assertTrue(y <= previous + 1, "Uphill jump in the spill channel at x=" + x);
+            previous = y;
+        }
+        assertTrue(previous < waterTop(lake));
+        assertFalse(hasSpillway(model(bowl, LAND, -0.5f).tile(0, 0).waterAt(64, 64)));
+    }
+
+    @Test
+    void neighbouringTilesAgreeOnBothWaterAndTerrainInParallel() throws Exception {
+        Field valley = (x, z) -> 92 - 0.06f * z + 0.13f * Math.abs(x + 8);
+        var model = model(valley, LAND, 0);
+        try (var workers = Executors.newFixedThreadPool(3)) {
+            var a = workers.submit(() -> model.tile(-1, -1));
+            var b = workers.submit(() -> model.tile(0, -1));
+            var c = workers.submit(() -> model.tile(-1, 0));
+            Tile left = a.get(15, TimeUnit.SECONDS);
+            Tile right = b.get(15, TimeUnit.SECONDS);
+            Tile below = c.get(15, TimeUnit.SECONDS);
+            Tile rebuilt = model(valley, LAND, 0).tile(-1, -1);
+            for (int i = -TILE_SIZE; i <= 0; i++) {
+                assertEquals(left.cutAt(0, i), right.cutAt(0, i), 0);
+                assertEquals(left.cutAt(i, 0), below.cutAt(i, 0), 0);
+                assertEquals(left.waterAt(0, i), right.waterAt(0, i));
+                assertEquals(left.waterAt(i, 0), below.waterAt(i, 0));
+                assertEquals(left.waterAt(-8, i), rebuilt.waterAt(-8, i));
+                assertEquals(left.cutAt(-8, i), rebuilt.cutAt(-8, i), 0);
+            }
         }
     }
 
     @Test
-    void cutsAreBoundedAndDoNotReachTheOpenOceanOrHighSummits() {
-        var land = DrainageModel.build(0, 0, SEED, SEA, VALLEY, LAND);
-        var ocean = DrainageModel.build(0, 0, SEED, SEA, VALLEY, (x, z) -> -0.4f);
-        var high = DrainageModel.build(0, 0, SEED, SEA, (x, z) -> VALLEY.at(x, z) + 90, LAND);
-        for (int x = 0; x < 128; x += 4) {
-            for (int z = 0; z < 128; z += 4) {
-                assertTrue(land.cutAt(x, z) >= 0 && land.cutAt(x, z) <= DrainageModel.MAX_CUT);
+    void cutsAreBoundedAndAnOpenOceanUsesItsNativeWater() {
+        Tile land = model(VALLEY, LAND, 0).tile(0, 0);
+        Tile ocean = model(VALLEY, (x, z) -> -0.4f, 0).tile(0, 0);
+        for (int x = 0; x < TILE_SIZE; x += 4) {
+            for (int z = 0; z < TILE_SIZE; z += 4) {
+                assertTrue(land.cutAt(x, z) >= 0 && land.cutAt(x, z) <= MAX_CUT);
                 assertEquals(0, ocean.cutAt(x, z), 0);
-                assertEquals(0, high.cutAt(x, z), 0);
+                assertEquals(DRY, ocean.waterAt(x, z));
             }
         }
     }

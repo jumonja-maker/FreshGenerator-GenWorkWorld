@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "freshgenerator_hydrology_audit",
+  "version": "1.0.0",
+  "name": "FreshGenerator hydrology audit",
+  "environment": "server",
+  "entrypoints": {"main": ["dev.freshgenerator.audit.HydrologyWorldAudit"]},
+  "depends": {"freshgenerator": "*", "fabric-api": "*"}
+}
