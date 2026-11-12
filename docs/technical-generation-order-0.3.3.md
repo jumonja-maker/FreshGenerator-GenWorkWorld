@@ -1,9 +1,25 @@
-# Controlled generation order for the technical audit
+# Контролируемый порядок подготовки чанков в техническом аудите
 
-The previous run 43171328114 was rejected, not published. The fresh seed-42 candidate differed at two sampled coal-ore blocks; one ordinary-world reference repeat differed at 298 sampled blocks. The latter occurred without changing the game mod. These observations do not prove a mod regression or prove its absence.
+Протокол: `native-status-barriers-v1`. Реализация: `scripts/technical_generation_order.py`. Наблюдатель преобразуется только в отдельных проверочных worktree; игровой JAR не изменяется.
 
-The new audit prepares a wider TERRAIN halo, then advances native chunk statuses in a declared order before observing FULL columns. It changes only the private test observer, not the game mod. All existing block comparisons, palette checks, climate checks, reference-repeat thresholds and release gates remain active.
+## Причина изменения
 
-The ordinary-world equality window is fixed at (8192,8192), outside startup spawn preparation, rather than (0,0). This coordinate is declared before running the new experiment and is not selected by a search for passing blocks. FreshGenerator windows are unchanged. On initial generation a target already past TERRAIN aborts the test; saved-world reload deliberately permits existing FULL chunks. The existing separate structural audit still checks spawn areas.
+Неуспешный прогон `43171328114` не опубликован. В кандидате FreshGenerator на сиде 42 обнаружены два отличия угольной руды; один повторный контроль обычного мира отличался на 298 исследованных блоках при неизменном игровом моде. Эти результаты нельзя автоматически считать доказательством ошибки кандидата либо её отсутствия.
 
-The actual native stage list, scheduled-request SHA-256, request counts and predecorated-target counts are retained in each raw observation. The 14 observer-transformation tests check missing/duplicate anchors, repeatability, preserved phase metadata and the absence of block-writing code. Compilation and native-world outcomes must still be checked; this document is not a claim that the new run passed.
+Исходные наблюдения: [FreshGenerator](../research/rejected-candidates/technical-before-barrier-fresh-42-7d4f21e.json.gz), [обычный мир](../research/rejected-candidates/technical-before-barrier-normal-42-7d4f21e.json.gz).
+
+## Протокол
+
+Сначала запрашивается TERRAIN для каждого целевого окна с дополнительным кольцом в три чанка. Затем для всех окон последовательно запрашиваются следующие штатные стадии с кольцом в два чанка, а FULL — с кольцом в один чанк. Набор стадий считывается из настоящего Minecraft, проверяется и упорядочивается; неизвестный контракт вызывает ошибку.
+
+На начальном проходе каждый чанк внутреннего целевого окна должен быть ровно на TERRAIN, иначе аудит останавливается. Повторное открытие кандидата разрешает уже существующие FULL-чанки. В отчёт записываются фактический список стадий, SHA-256 порядка запросов, количество запросов и число предварительно декорированных целевых чанков.
+
+Обычное контрольное окно заранее перенесено из (0,0) в (8192,8192): подготовка спавна проходит до SERVER_STARTED. Координата не выбиралась поиском места, где результат проходит. Координаты FreshGenerator не изменены; отдельная проверка структур продолжает исследовать области спавна.
+
+Все требования к состояниям блоков, палитрам, геометрии, биомам, повторному открытию и контрольным запускам сохранены. Код не заменяет блоки и не выкидывает руду, скалк, растения или воду из сравнения.
+
+## Подтверждение
+
+В финальном прогоне [43175196931](https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/43175196931) прошли 14 тестов преобразования наблюдателя и все четыре парных серверных сценария. В каждом сценарии три чистых мира 0.3.2, кандидат и повторно открытый кандидат совпали по обследованным готовым блокам; суммарно 1 572 864 состояния блоков на проход четырёх сценариев.
+
+Это контроль ограниченных образцов при объявленном порядке подготовки, а не доказательство полной детерминированности всей игры. Служебные лесные счётчики местами различались и сохранены без нормализации в [отчёте](../dist/validation-0.3.3-alpha.1.json). Обычный исходный участок спавна не объявляется исправленным или перепроверенным тем же полным парным образцом.
