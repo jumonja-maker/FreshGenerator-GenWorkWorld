@@ -1,9 +1,9 @@
 {
   "version": "0.3.5-alpha.1",
-  "source_commit": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
+  "source_commit": "83b432843122c30a55f88cc68b94b9842f3b5819",
   "reference_commit": "7c661cecbc42328c4ef099b034393cc36afb8b50",
   "unit_tests_passed": 232,
-  "metric_tests_passed": 125,
+  "metric_tests_passed": 128,
   "metrics": {
     "biome-region-metric-tests.json": {
       "tests": 8,
@@ -30,7 +30,7 @@
       "skipped": 0
     },
     "ci-evidence-tests.json": {
-      "tests": 21,
+      "tests": 24,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -78,11 +78,11 @@
     "normal_control": 5,
     "structures_and_vanilla_controls": 6
   },
-  "run_url": "https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/43209013374",
+  "run_url": "https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/43213951586",
   "ci_evidence": {
     "identity": {
-      "GITHUB_SHA": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
-      "GITHUB_RUN_ID": "43209013374",
+      "GITHUB_SHA": "83b432843122c30a55f88cc68b94b9842f3b5819",
+      "GITHUB_RUN_ID": "43213951586",
       "GITHUB_RUN_ATTEMPT": "1",
       "GITHUB_REPOSITORY": "jumonja-maker/FreshGenerator-GenWorkWorld"
     },
@@ -90,64 +90,64 @@
       {
         "name": "technical-build",
         "files": 38,
-        "sha256": "90c991937e7104e5e3b8385b07b2fa9de488f28a374349d893323945e8495a52",
-        "git_blob": "7e5bb3dd1c92c70ab5c14d502ffa662d67393ac3",
+        "sha256": "640a3f4547e23b3480e86d4a6977f46ffd45b950b5a96f493b3b84ad5f7e3370",
+        "git_blob": "c418cf1ee5f8cbfc0633a616bacad77a2cebab1b",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-structures-1337",
         "files": 8,
-        "sha256": "e87d788424752e1285d05c707fd4f16ac980337d9505e2c472d07084372c262a",
-        "git_blob": "c0822fc1cf78aec783bb4955c32c96ab76305571",
+        "sha256": "9c315044eafdd49bf4675590c9e3247b82f71fd162f2c70f451a938eb98b7a4f",
+        "git_blob": "ec3be81f626c656a3da911a9380e8bce7c1e7f48",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-structures-42",
         "files": 8,
-        "sha256": "54340fd216deeccecb1052c0c0ce85ef2b61e879b949b4f099d5e6fb112e4433",
-        "git_blob": "3f625d041de73031feed0d4e0771e07e9ab54a28",
+        "sha256": "82fa4825ddd5b10a7e5a865994b8f5d7bc06d99307e667a4e96da2f186adf17a",
+        "git_blob": "d13913440fb01a167f9bcbe9d7f7fc9cc3edf61d",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-structures--20261111",
         "files": 8,
-        "sha256": "4c35523678992f3184b793bba1ab911eb672de2fd8d69f591005d55c3e4927d7",
-        "git_blob": "53897b7fdfca77fa1f04b63e17133c0771445b47",
+        "sha256": "b2e0be696371b47d4544c6a58aa4f0e523ea2f6284e514e6ef7e38e33a2ec6b4",
+        "git_blob": "35feba5f3d0982fd9fd8cee0414f0b7b6ebd48ed",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-world-fresh-1337",
         "files": 10,
-        "sha256": "9b8af6d99df8f3dde3bcaad23d60e0faf7ce76c32495aa75f24ae6b99202305a",
-        "git_blob": "63571dbbe8e7fbafde736714c21dc1d0723ebd43",
+        "sha256": "365a69a31459434aecdfb75ff3800d1396dffbd8bbb9256f4286ffef68fa05bb",
+        "git_blob": "d2369c57b1cb7eb2845b0b12bb36e26ccfd98232",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-world-fresh-42",
         "files": 10,
-        "sha256": "72d6e31d560ee8769242bb28a28f24846bacddc688e45b6af968d230c4b030b2",
-        "git_blob": "734b3863515d562f23a31e4ef05ed2f5a5fea629",
+        "sha256": "d8e912424831ddabfff1a9a988490a1d6945535d92f87b1ac848618c3601d631",
+        "git_blob": "ca096574d608489ed25595ac1a846f30cbcdbb67",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-world-fresh--20261111",
         "files": 10,
-        "sha256": "b4d051a19ea5dcdd9c6910a5c82559d00c734c816bf982e7e49fe899f2fc0ffc",
-        "git_blob": "dba1204a1280f8aba9a39c2f81154a553ad2d6e8",
+        "sha256": "fb26e5859b206fc44516c992774968326405fd3b83d5dab7274c786b6afac1dc",
+        "git_blob": "a8537cffed2ccd45840abdac08cc93fe680e8fb0",
         "source_run_attempt": "1"
       },
       {
         "name": "technical-world-normal-42",
         "files": 13,
-        "sha256": "9d62db1e6a796a4af16b3117d0a07b59587ac10f6584f49b1960c689d1ca037c",
-        "git_blob": "2f891ea1f0b72c47e79e95291d7d80e69d6ed9c4",
+        "sha256": "8bd869be83d40008a8d884ecda2e30e9896b5f52f13baf48b160ab1250312fc0",
+        "git_blob": "9cdd220407a85217e6a2a5d532c76ebd4625b202",
         "source_run_attempt": "1"
       }
     ]
   },
   "paired_villages": {
     "42": {
-      "source_commit": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
+      "source_commit": "83b432843122c30a55f88cc68b94b9842f3b5819",
       "reference_commit": "7c661cecbc42328c4ef099b034393cc36afb8b50",
       "seed": 42,
       "actual_server_runs": 4,
@@ -12001,7 +12001,7 @@
       }
     },
     "1337": {
-      "source_commit": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
+      "source_commit": "83b432843122c30a55f88cc68b94b9842f3b5819",
       "reference_commit": "7c661cecbc42328c4ef099b034393cc36afb8b50",
       "seed": 1337,
       "actual_server_runs": 4,
@@ -19962,7 +19962,7 @@
       }
     },
     "-20261111": {
-      "source_commit": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
+      "source_commit": "83b432843122c30a55f88cc68b94b9842f3b5819",
       "reference_commit": "7c661cecbc42328c4ef099b034393cc36afb8b50",
       "seed": -20261111,
       "actual_server_runs": 4,
@@ -31900,7 +31900,7 @@
     "protected_floor_lava_columns": 0
   },
   "ordinary_minecraft_control": {
-    "source_commit": "b94d30ba5d9b2aa609b9457381197f4d8cbbe7bf",
+    "source_commit": "83b432843122c30a55f88cc68b94b9842f3b5819",
     "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
     "seed": 42,
     "scope": "normal",
@@ -31939,29 +31939,29 @@
       "forest_counts_are_observational_not_a_determinism_claim": true,
       "native_height_cache_protocol_verified": true,
       "candidate_height_oracle": {
-        "verified_calls": 0,
-        "hits": 0,
         "misses": 0,
-        "mismatches": 0
+        "mismatches": 0,
+        "verified_calls": 0,
+        "hits": 0
       },
       "reference_height_oracles": [
         {
-          "misses": 0,
-          "mismatches": 0,
-          "verified_calls": 0,
-          "hits": 0
-        },
-        {
-          "mismatches": 0,
-          "misses": 0,
           "hits": 0,
-          "verified_calls": 0
+          "verified_calls": 0,
+          "mismatches": 0,
+          "misses": 0
         },
         {
           "verified_calls": 0,
           "mismatches": 0,
           "misses": 0,
           "hits": 0
+        },
+        {
+          "hits": 0,
+          "misses": 0,
+          "mismatches": 0,
+          "verified_calls": 0
         }
       ],
       "forest_reference_snapshots": [
@@ -32030,12 +32030,12 @@
     "observer_sha256": "3528daf8a104a57db3a64a59b154f6e745a2c875948964be841b9b2328cc26f6",
     "limitations": "Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.",
     "input_sha256": {
-      "reference-repeat-2.json": "5fd907ce4fd1a002aa0d4ae125740b3ca7c8cfbe5126031b1ec175bd217ed70d",
+      "reference-repeat-2.json": "8951090cd5e55e2ad27f7c6d79ad8ec222a1be5ac395e0f79547b9c41b9605c1",
       "diagnostics.json": "465beffdce8813fdb6ab84e45aae4345f233015dac50d2d5527b594c53b2916f",
-      "reference-repeat.json": "e571040fffa78e8c9c6bda58b0236d9f922938d288759f0e424e09f0f0c24ed4",
-      "reference.json": "f5a3cecf95a06ecc3741fc01b4de4dc9bb7d4001ca26fc2c9cfc986f27bb836f",
-      "candidate.json": "e6188fcaff8202925522f151e6db6873744ea21b4c4ffb862e6f3b0c050614d9",
-      "candidate-reload.json": "d7312084ae20e5f2bd728490fa662ee956caef014f5cab1a65c1999a2e730057",
+      "reference-repeat.json": "eeed6b1473a303375163dcdd2f6a1729d625a5004858838f3c5ae1a490a873a7",
+      "reference.json": "b352af82614b996e03b4d56a2db2bbb9f69ba450fa7ad489b765143f9338fd18",
+      "candidate.json": "b2795a4ff0f23f2cba91ae4969cc9bc53ea2452df8f4881e7917a239f5915b1c",
+      "candidate-reload.json": "fea789d9e4b5195e62602b01f5ed0a180ab53fff0e44d01c83b771e140e3d55e",
       "coordinates.json": "633f1dee7d06981430f285ba6434f6a3e52b5db91fb875a5548df9c1bc9b0b00"
     }
   },
@@ -32045,7 +32045,7 @@
       "terrain_block_positions_scanned": 4734976,
       "detached_sky_terrain_components": 0,
       "isolated_single_blocks": 0,
-      "boundary_unknown_components": 14,
+      "boundary_unknown_components": 17,
       "villages_examined": 2,
       "structures_examined": 4,
       "structure_pieces_examined": 267,
