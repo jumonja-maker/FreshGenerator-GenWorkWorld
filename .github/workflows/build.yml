@@ -6,7 +6,7 @@ permissions:
   contents: write
 concurrency:
   group: core-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
