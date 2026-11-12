@@ -33,7 +33,9 @@ jobs:
           sha256sum build/libs/*.jar
       - name: Sample structures in two fresh worlds
         if: contains(github.event.head_commit.message, '[audit-structures]')
-        run: bash scripts/technical_structure_audit.sh 42
+        run: |
+          bash scripts/technical_structure_audit.sh 42
+          grep -h 'NATIVE_MOUNTAIN_SURFACE_DENSITY' build/reports/technical/structures-42.*/*fg-42.log
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
