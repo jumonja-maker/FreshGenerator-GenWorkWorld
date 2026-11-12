@@ -3,11 +3,13 @@ No branches/tags/releases are created, no existing files/artifacts are deleted. 
 40-character object IDs cross job outputs; the publisher revalidates every byte and
 source/run identity before using the files. Successful evidence is retained in dist.
 """
-import argparse,base64,gzip,hashlib,io,json,os,re,time,urllib.error,urllib.request
+import argparse,base64,gzip,hashlib,io,json,os,re,tempfile,time,urllib.error,urllib.request
+from contextlib import contextmanager
 from pathlib import Path,PurePosixPath
 
 MAX_PACKED=16*1024*1024
 MAX_RAW=64*1024*1024
+MAX_FILES=5000
 # Base64 adds 4/3 overhead; keep decoded bytes and JSON envelope separately bounded.
 MAX_ENVELOPE=96*1024*1024
 BUNDLES={
@@ -43,18 +45,38 @@ def blob_sha(data):return hashlib.sha1(('blob '+str(len(data))+'\0').encode()+da
 def pack(root,patterns,name,identity):
  root=Path(root).resolve();files={};total=0
  for pattern in patterns:
-  for p in sorted(root.glob(pattern)):
+  for p in root.glob(pattern):
    if not p.is_file():continue
    require(not p.is_symlink() and p.resolve().is_relative_to(root),'Symlink/outside evidence root')
    key=p.relative_to(root).as_posix();valid_name(key)
    if key in files:continue
-   raw=p.read_bytes();total+=len(raw);require(total<=MAX_RAW,'Evidence exceeds size budget')
+   require(len(files)<MAX_FILES,'Too many evidence files')
+   with p.open('rb') as source:
+    size=os.fstat(source.fileno()).st_size
+    require(size<=MAX_RAW-total,'Evidence exceeds size budget')
+    raw=source.read(size+1)
+   require(len(raw)==size,'Evidence file changed size while packing: '+key)
+   total+=size
    files[key]={'sha256':hashlib.sha256(raw).hexdigest(),'content':base64.b64encode(raw).decode('ascii')}
- require(0<len(files)<=5000,'No evidence or too many files')
+ require(bool(files),'No evidence files')
  raw=json.dumps({'schema':1,'name':name,'identity':identity,'files':files},sort_keys=True,separators=(',',':')).encode()
  require(len(raw)<=MAX_ENVELOPE,'Envelope exceeds size budget')
  data=gzip.compress(raw,mtime=0);require(len(data)<=MAX_PACKED,'Compressed evidence too large')
  return data
+
+@contextmanager
+def staged_directory(destination):
+ destination=Path(destination)
+ def require_new_destination():
+  require(not destination.exists() and not destination.is_symlink(),'Refusing to overwrite prior evidence')
+ require_new_destination()
+ destination.parent.mkdir(parents=True,exist_ok=True)
+ with tempfile.TemporaryDirectory(prefix='.evidence-',dir=destination.parent) as temporary:
+  staged=Path(temporary)/'data'
+  staged.mkdir()
+  yield staged
+  require_new_destination()
+  staged.rename(destination)
 
 def unpack(data,name,identity,destination):
  require(len(data)<=MAX_PACKED,'Oversized compressed evidence')
@@ -69,18 +91,19 @@ def unpack(data,name,identity,destination):
  # another commit/run or an impossible future attempt.
  require(1<=int(actual['GITHUB_RUN_ATTEMPT'])<=int(expected['GITHUB_RUN_ATTEMPT']),
          'Invalid or future evidence attempt')
- require(isinstance(bundle['files'],dict) and 0<len(bundle['files'])<=5000,'Missing files')
+ require(isinstance(bundle['files'],dict) and 0<len(bundle['files'])<=MAX_FILES,'Missing files or too many files')
  validated={};total=0
  for key,entry in bundle['files'].items():
-  valid_name(key);content=base64.b64decode(entry['content'],validate=True)
+  path=valid_name(key);content=base64.b64decode(entry['content'],validate=True)
   total+=len(content);require(total<=MAX_RAW,'Oversized decoded files')
   require(hashlib.sha256(content).hexdigest()==entry['sha256'],'File fingerprint mismatch: '+key)
-  validated[key]=content
- destination=Path(destination);require(not destination.exists(),'Refusing to overwrite prior evidence')
- destination.mkdir(parents=True)
- for key,content in validated.items():
-  path=destination/key;path.parent.mkdir(parents=True,exist_ok=True)
-  with path.open('xb') as out:out.write(content)
+  validated[path]=content
+ require(not any(parent in validated for path in validated for parent in path.parents),
+         'Conflicting file and directory paths in evidence')
+ with staged_directory(destination) as staged:
+  for key,content in validated.items():
+   path=staged/key;path.parent.mkdir(parents=True,exist_ok=True)
+   with path.open('xb') as out:out.write(content)
  return {'name':name,'files':len(validated),'sha256':hashlib.sha256(data).hexdigest(),'git_blob':blob_sha(data),
          'source_run_attempt':actual['GITHUB_RUN_ATTEMPT']}
 
@@ -118,11 +141,12 @@ def get_all(needs,destination):
    require(re.fullmatch(r'[0-9a-f]{40}',value),'Invalid blob output');outputs[key]=value
  require(set(outputs)==set(BUNDLES),'Missing evidence outputs')
  identity=provenance();index=[]
- for key,sha in sorted(outputs.items()):
-  result=request('/'+sha);require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
-  data=base64.b64decode(result['content']);require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
-  index.append(unpack(data,BUNDLES[key],identity,Path(destination)/BUNDLES[key]))
- Path(destination,'index.json').write_text(json.dumps({'identity':identity,'bundles':index},indent=2)+'\n')
+ with staged_directory(destination) as staged:
+  for key,sha in sorted(outputs.items()):
+   result=request('/'+sha);require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
+   data=base64.b64decode(result['content']);require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
+   index.append(unpack(data,BUNDLES[key],identity,staged/BUNDLES[key]))
+  (staged/'index.json').write_text(json.dumps({'identity':identity,'bundles':index},indent=2)+'\n')
  print('CI_EVIDENCE_RESTORED '+json.dumps(index))
 
 if __name__=='__main__':
