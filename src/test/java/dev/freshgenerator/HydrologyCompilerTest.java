@@ -73,6 +73,7 @@ class HydrologyCompilerTest {
         assertEquals(1, caveWeight(12, 56, 12), 1e-5);
         assertEquals(1, caveWeight(0, 56, 0), 1e-5);
         assertEquals(0, caveWeight(0.25, 110, 0), 1e-5);
+        assertEquals(0, caveWeight(-0.25, 110, 0), 1e-5);
     }
 
     @Test

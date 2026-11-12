@@ -61,7 +61,8 @@ public final class HydrologyCompiler {
 
         // Keep the newly cut bed supported by solid ground. Existing terrain
         // and the native cave signal twelve blocks below the new bed keep the old blend.
-        DensityExpr newBed = clamp01(mul(constant(4), cut));
+        DensityExpr bankOrBed = new Binary(Op.MAX, cut, mul(constant(-1), cut));
+        DensityExpr newBed = clamp01(mul(constant(4), bankOrBed));
         DensityExpr shallow = fade(5, 12, ref(COHERENT + "depth_blocks"));
         JsonElement caveWeight = GSON.toJsonTree(mul(ref(HYDROLOGY + "base_cave_weight"),
                 sub(constant(1), mul(newBed, shallow))).json());

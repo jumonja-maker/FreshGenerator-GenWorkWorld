@@ -62,7 +62,7 @@ public record DrainageDensity(DensityFunction terrain, DensityFunction continent
         return new DrainageDensity(rule.rewrite(terrain), rule.rewrite(continents), moisture.map(rule::rewrite), seaLevel, heightGrid);
     }
 
-    @Override public Interval range() { return Interval.of(0, DrainageModel.MAX_CUT); }
+    @Override public Interval range() { return Interval.of(-DrainageModel.MAX_BANK_RAISE, DrainageModel.MAX_CUT); }
     @Override public int domainAxes() { return AXIS_X | AXIS_Z; }
     @Override public MapCodec<DrainageDensity> codec() { return CODEC; }
 

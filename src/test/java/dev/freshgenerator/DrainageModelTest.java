@@ -107,7 +107,7 @@ class DrainageModelTest {
         Tile ocean = model(VALLEY, (x, z) -> -0.4f, 0).tile(0, 0);
         for (int x = 0; x < TILE_SIZE; x += 4) {
             for (int z = 0; z < TILE_SIZE; z += 4) {
-                assertTrue(land.cutAt(x, z) >= 0 && land.cutAt(x, z) <= MAX_CUT);
+                assertTrue(land.cutAt(x, z) >= -MAX_BANK_RAISE && land.cutAt(x, z) <= MAX_CUT);
                 assertEquals(0, ocean.cutAt(x, z), 0);
                 assertEquals(DRY, ocean.waterAt(x, z));
             }

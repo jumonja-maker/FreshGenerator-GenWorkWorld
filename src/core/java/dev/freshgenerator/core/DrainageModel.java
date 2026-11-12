@@ -11,13 +11,15 @@ import java.util.function.Supplier;
 public final class DrainageModel {
     public static final int TILE_SIZE = 128;
     public static final float MAX_CUT = 18;
+    public static final float MAX_BANK_RAISE = 2.25f;
     public static final int DRY = 0;
     public static final int SPACING = 16;
     public static final int MAX_FLOW = 256;
     public static final int MIN_FLOW = 16;
     static final long NO_CELL = Long.MIN_VALUE;
     private static final int CELLS = TILE_SIZE / SPACING;
-    private static final int SIDE = TILE_SIZE + 1;
+    // Shared edges include a one-block apron for the dry banks.
+    private static final int SIDE = TILE_SIZE + 3;
     private static final int REACH_MARGIN = 3;
 
     private final long seed;
@@ -81,7 +83,7 @@ public final class DrainageModel {
     int sea() { return sea; }
 
     float riverLevel(Cell cell) {
-        return Math.max(sea - 1, cell.height - 0.8f);
+        return Math.max(sea - 1, cell.height - 2.0f);
     }
 
     private Grid grid(int gx, int gz) {
@@ -205,7 +207,7 @@ public final class DrainageModel {
 
     private Tile buildTile(int tx, int tz) {
         Fields samples = fields.get();
-        Raster raster = new Raster(tx * TILE_SIZE, tz * TILE_SIZE, samples.terrain);
+        Raster raster = new Raster(tx * TILE_SIZE - 1, tz * TILE_SIZE - 1, samples.terrain);
         int gx0 = tx * CELLS, gz0 = tz * CELLS;
         long[] pending = new long[MAX_FLOW];
         for (int gz = gz0 - REACH_MARGIN; gz <= gz0 + CELLS + REACH_MARGIN; gz++) {
@@ -258,10 +260,33 @@ public final class DrainageModel {
             Arrays.fill(height, Float.NaN);
         }
 
-        Tile finish() { return new Tile(x0, z0, cut, water); }
+        Tile finish() {
+            for (int z = 1; z < SIDE - 1; z++) {
+                for (int x = 1; x < SIDE - 1; x++) {
+                    int i = z * SIDE + x;
+                    if (water[i] != DRY) continue;
+                    int top = Math.max(Math.max(bankStage(water[i - 1]), bankStage(water[i + 1])),
+                            Math.max(bankStage(water[i - SIDE]), bankStage(water[i + SIDE])));
+                    if (top == Integer.MIN_VALUE) continue;
+                    float h = original(i, x0 + x, z0 + z);
+                    // Keep the uncut rim and seal shallow natural cave holes beside it.
+                    // Low neighboring banks may rise by at most two and a quarter blocks.
+                    if (h >= top + 0.55f) {
+                        cut[i] = Math.clamp(cut[i], 0.25f, Math.max(0.25f, h - top - 0.30f));
+                    } else if (h >= top + 0.55f - MAX_BANK_RAISE) {
+                        cut[i] = Math.clamp(h - (top + 0.55f), -MAX_BANK_RAISE, -0.25f);
+                    }
+                }
+            }
+            return new Tile(x0, z0, cut, water);
+        }
+
+        private static int bankStage(int profile) {
+            return profile == DRY ? Integer.MIN_VALUE : waterTop(profile);
+        }
 
         void lakeColumn(int x, int z, int top, boolean spilling) {
-            if (x < x0 || x > x0 + TILE_SIZE || z < z0 || z > z0 + TILE_SIZE) return;
+            if (x < x0 || x >= x0 + SIDE || z < z0 || z >= z0 + SIDE) return;
             int i = (z - z0) * SIDE + x - x0;
             wet(i, original(i, x, z), top, top - 0.2f, spilling ? 3 : 1);
         }
@@ -292,9 +317,9 @@ public final class DrainageModel {
             float maxWidth = width(downstreamQ, grade);
             int margin = (int) Math.ceil(2 * maxWidth + 5);
             int minX = Math.max(x0, Math.min(a.x, b.x) - margin);
-            int maxX = Math.min(x0 + TILE_SIZE, Math.max(a.x, b.x) + margin);
+            int maxX = Math.min(x0 + SIDE - 1, Math.max(a.x, b.x) + margin);
             int minZ = Math.max(z0, Math.min(a.z, b.z) - margin);
-            int maxZ = Math.min(z0 + TILE_SIZE, Math.max(a.z, b.z) + margin);
+            int maxZ = Math.min(z0 + SIDE - 1, Math.max(a.z, b.z) + margin);
             if (minX > maxX || minZ > maxZ) return;
 
             // On gentle slopes a curve is allowed where the sampled valley is lower.

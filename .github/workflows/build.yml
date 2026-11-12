@@ -12,7 +12,7 @@ jobs:
     name: Validate separate patch
     if: "github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     permissions:
-      contents: read
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -45,15 +45,12 @@ jobs:
           gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
           sha256sum --check build/reports/village-release/reproducible.sha256
           python3 scripts/validate_hydrology_release.py build
-      - name: Attach verified candidate package
-        uses: actions/upload-artifact@v4
-        with:
-          name: freshgenerator-0.3.7-alpha.1-candidate
-          path: |
-            build/libs/*.jar
-            build/reports/village-release/reproducible.sha256
-            build/reports/village-release/build.json
-          if-no-files-found: error
+      - name: Preserve the verified candidate package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put build_blob build
+          'libs/*.jar' 'reports/village-release/*' 'test-results/test/*.xml'
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
@@ -220,16 +217,9 @@ jobs:
             export FG_HYDROLOGY_RUNS='candidate baseline reverse parallel reload normal-baseline normal-candidate distant-horizons'
           fi
           bash scripts/hydrology_world_audit.sh "$SEED"
-      - name: Attach native observations and logs
-        if: always() && steps.native.outputs.report_dir != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: hydrology-${{ matrix.seed }}
-          path: ${{ steps.native.outputs.report_dir }}
-          if-no-files-found: error
-      - name: Preserve run-bound native evidence for publication
+      - name: Preserve run-bound native observations
         id: evidence
-        if: github.ref == 'refs/heads/main'
+        if: always() && steps.native.outputs.report_dir != ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPORT: ${{ steps.native.outputs.report_dir }}

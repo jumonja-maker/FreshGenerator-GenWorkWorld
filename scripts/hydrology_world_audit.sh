@@ -14,6 +14,8 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   printf 'report_dir=%s\n' "$report" >> "$GITHUB_OUTPUT"
 fi
 printf 'HYDROLOGY_REPORT_DIR=%s\n' "$report"
+java_cmd=${JAVA_HOME:+$JAVA_HOME/bin/}java
+"$java_cmd" -version
 assets=$root/build/hydrology-audit
 scratch=$(mktemp -d "$root/build/hydrology-world-$seed.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT
@@ -49,13 +51,14 @@ for mode in "${modes[@]}"; do
   preset=freshgenerator:world
   world=world-$mode
   jar=$candidate
+  processors=4
   case "$mode" in
     candidate|reverse|parallel) ;;
     reload) world=world-candidate ;;
     baseline) jar=$baseline ;;
     patch-baseline) jar=${FG_HYDROLOGY_PATCH_BASELINE_JAR:?initial patch JAR required} ;;
-    normal-baseline) preset=minecraft:normal; jar=$baseline ;;
-    normal-candidate) preset=minecraft:normal ;;
+    normal-baseline) preset=minecraft:normal; jar=$baseline; processors=1 ;;
+    normal-candidate) preset=minecraft:normal; processors=1 ;;
     distant-horizons)
       dh=${FG_HYDROLOGY_DH_JAR:-$assets/DistantHorizons-3.3.4.jar}
       download 'https://cdn.modrinth.com/data/uCdwusMi/versions/TGgEbP9A/DistantHorizons-3.3.4-26.3-fabric-neoforge.jar' "$dh"
@@ -86,8 +89,8 @@ PROPS
   if ! (
     cd "$scratch"
     FG_HYDROLOGY_MODE="$mode" FG_HYDROLOGY_PLAN="$report/plan.json" FG_HYDROLOGY_JAR_SHA256="$jar_sha" \
-      timeout --signal=QUIT --kill-after=15s "${FG_HYDROLOGY_TIMEOUT:-480s}" java -Xms512M -Xmx2G -XX:ActiveProcessorCount=4 \
-      -Dmax.bg.threads=4 "-Dfabric.installer.server.gameJar=$game" -jar launcher.jar nogui
+      timeout --signal=QUIT --kill-after=15s "${FG_HYDROLOGY_TIMEOUT:-480s}" "$java_cmd" -Xms512M -Xmx2G "-XX:ActiveProcessorCount=$processors" \
+      "-Dmax.bg.threads=$processors" "-Dfabric.installer.server.gameJar=$game" -jar launcher.jar nogui
   ) > "$report/$mode.log" 2>&1; then
     tail -n 100 "$report/$mode.log"
     exit 1
