@@ -30,6 +30,13 @@ jobs:
         run: |
           gradle --no-daemon --console=plain clean build
           python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/test_biome_region_metrics.py
+          python3 scripts/test_cave_audit_metrics.py
+          python3 scripts/test_cave_full_stage_checks.py
+          python3 scripts/test_technical_update_checks.py
+          python3 scripts/test_ci_evidence.py
+          python3 scripts/test_technical_reference_envelope.py
+          python3 scripts/test_village_checks.py
           sha256sum build/libs/*.jar
           mkdir -p build/reports/village-release
           sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
