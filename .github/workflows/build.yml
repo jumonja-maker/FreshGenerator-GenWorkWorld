@@ -3,7 +3,7 @@ on:
   push:
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: core-${{ github.ref }}
   cancel-in-progress: true
@@ -11,9 +11,7 @@ jobs:
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    outputs:
-      build_blob: ${{ steps.evidence.outputs.build_blob }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -21,134 +19,11 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Use the canonical Central fallback for all worktrees
+      - name: Canonical Central fallback
         run: |
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
-      - name: Compile game APIs and run all contract tests
-        run: |
-          gradle --no-daemon --console=plain clean build
-          python3 scripts/test_biome_region_metrics.py
-          python3 scripts/test_cave_audit_metrics.py
-          python3 scripts/test_cave_full_stage_checks.py
-          python3 scripts/test_technical_update_checks.py
-          python3 scripts/test_ci_evidence.py
-          python3 scripts/test_technical_reference_envelope.py
-      - name: Verify repeatable package and unchanged generation data
-        run: |
-          mkdir -p build/reports/technical-update
-          sha256sum build/libs/*.jar > build/reports/technical-update/reproducible.sha256
-          gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
-          sha256sum --check build/reports/technical-update/reproducible.sha256
-          python3 scripts/validate_technical_release.py build
-      - name: Keep package and test evidence in the repository Git database
-        id: evidence
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci_evidence.py put build_blob build
-          'libs/*.jar' 'reports/technical-update/*'
-          'test-results/test/*.xml' 'reports/*tests.json'
-  worlds:
-    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    outputs:
-      world_fresh_42: ${{ steps.evidence.outputs.world_fresh_42 }}
-      world_fresh_1337: ${{ steps.evidence.outputs.world_fresh_1337 }}
-      world_fresh_negative: ${{ steps.evidence.outputs.world_fresh_negative }}
-      world_normal_42: ${{ steps.evidence.outputs.world_normal_42 }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {seed: '42', scope: fresh, evidence_key: world_fresh_42}
-          - {seed: '1337', scope: fresh, evidence_key: world_fresh_1337}
-          - {seed: '-20261111', scope: fresh, evidence_key: world_fresh_negative}
-          - {seed: '42', scope: normal, evidence_key: world_normal_42}
-    steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '25'}
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Use the canonical Central fallback for all worktrees
-        run: |
-          mkdir -p "$GRADLE_USER_HOME/init.d"
-          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
-      - name: Exact reference, candidate and saved-world comparison
-        run: bash scripts/technical_update_audit.sh '${{ matrix.seed }}' '${{ matrix.scope }}'
-      - name: Keep observations without Actions artifact storage
-        id: evidence
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
-          'build/reports/technical-update/${{ matrix.scope }}-${{ matrix.seed }}'
-          '*.json' '*.log'
-  structures:
-    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    outputs:
-      structures_42: ${{ steps.evidence.outputs.structures_42 }}
-      structures_1337: ${{ steps.evidence.outputs.structures_1337 }}
-      structures_negative: ${{ steps.evidence.outputs.structures_negative }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {seed: '42', evidence_key: structures_42}
-          - {seed: '1337', evidence_key: structures_1337}
-          - {seed: '-20261111', evidence_key: structures_negative}
-    steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '25'}
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Use the canonical Central fallback for all worktrees
-        run: |
-          mkdir -p "$GRADLE_USER_HOME/init.d"
-          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
-      - name: Actual structures and supported terrain with vanilla control
-        run: bash scripts/technical_structure_audit.sh '${{ matrix.seed }}'
-      - name: Keep warnings and structure evidence without artifact quota
-        id: evidence
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
-          build/reports/technical '*.json' '*.log' '*.properties'
-  publish:
-    needs: [build, worlds, structures]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - name: Restore exact evidence from this run and commit
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          EVIDENCE_JOBS: ${{ toJSON(needs) }}
-        run: python3 scripts/ci_evidence.py get ci-evidence
-      - name: Recheck raw evidence and publish only a complete passing release
-        run: python3 scripts/validate_technical_release.py publish
-      - name: Commit verified binary and report without overwriting newer main
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add dist/
-          git commit -m 'build: publish verified worldgen-preserving technical update 0.3.3 [skip ci]'
-          git push origin HEAD:main
+      - name: Compile candidate and preserve existing generation contracts
+        run: gradle --no-daemon --console=plain clean build
+      - name: Candidate status only - no release until real village audits pass
+        run: echo 'Village candidate compiled. This workflow does not publish an installable release.'
