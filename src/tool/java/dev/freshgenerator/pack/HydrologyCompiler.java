@@ -82,13 +82,20 @@ public final class HydrologyCompiler {
                 "left", Map.of("type", "minecraft:blend_alpha"), "right", MODEL))));
         JsonElement height = cache(sub(base, cut));
 
-        // Keep the newly cut bed supported by solid ground. Existing terrain
-        // and the native cave signal twelve blocks below the new bed keep the old blend.
+        // A raised bank can cross the mountain threshold or put the old cave
+        // transition closer to the surface. Keep the stronger of the original
+        // cave protection and the mountain roof at the final elevation.
+        DensityExpr depth = ref(COHERENT + "depth_blocks");
+        DensityExpr mountainRoof = mul(ref(COHERENT + "mountain_protection"),
+                fade(CoherentSurfaceCompiler.MOUNTAIN_ROOF, CoherentSurfaceCompiler.FULL_CAVE_DEPTH, depth));
+        DensityExpr caveEnvelope = new Binary(Op.MIN, ref(HYDROLOGY + "reference_cave_weight"),
+                sub(constant(1), mountainRoof));
+
+        // Seal a separate, shallower band beneath cut beds and raised banks.
         DensityExpr bankOrBed = new Binary(Op.MAX, cut, mul(constant(-1), cut));
         DensityExpr newBed = clamp01(mul(constant(4), bankOrBed));
-        DensityExpr shallow = fade(5, 12, ref(COHERENT + "depth_blocks"));
-        JsonElement caveWeight = GSON.toJsonTree(mul(ref(HYDROLOGY + "reference_cave_weight"),
-                sub(constant(1), mul(newBed, shallow))).json());
+        JsonElement caveWeight = GSON.toJsonTree(mul(caveEnvelope,
+                sub(constant(1), mul(newBed, fade(5, 12, depth)))).json());
 
         for (String name : layer.keySet()) {
             if (out.containsKey(name)) throw new IllegalStateException("Duplicate hydrology resource: " + name);

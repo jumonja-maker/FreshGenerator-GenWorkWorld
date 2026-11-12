@@ -6,7 +6,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from village_checks import require
+from village_checks import fingerprint, require
 
 SIDE = 33
 RADIUS = SIDE // 2
@@ -15,6 +15,7 @@ WATER_FLAGS = 1 | 2
 RIVER_BIOME = 16
 MODES = ('candidate', 'baseline', 'reverse', 'parallel', 'reload',
          'normal-baseline', 'normal-repeat-1', 'normal-repeat-2', 'normal-candidate')
+VANILLA_MODES = ('normal-baseline', 'normal-repeat-1', 'normal-repeat-2')
 
 
 def read_json(path):
@@ -26,11 +27,19 @@ def load(folder, seed, mode, plan):
     expected = 'minecraft:overworld' if mode.startswith('normal-') else 'freshgenerator:highlands_v2'
     require(result['seed'] == seed and result['mode'] == mode and result['settings'] == expected,
             f'Incorrect seed, mode, or noise settings for {mode}')
+    require(result['minecraft'] == '26.3' and result['fabric_loader'] == '0.20.1'
+            and result['java'].split('.')[0].split('+')[0] == '25', f'Wrong game or Java version for {mode}')
+    require(result['freshgenerator_loaded'] is (mode not in VANILLA_MODES), f'Wrong mod set for {mode}')
     require(result['full_chunks'] >= 9 and result['chunk_generation_ms'] >= 0,
             f'Missing FULL generation for {mode}')
     require(result['requested_parallel'] == (mode == 'parallel'), f'Wrong generation mode for {mode}')
-    require(f'FRESHGENERATOR_HYDROLOGY_WORLD_PASS {mode} {seed}' in (folder / f'{mode}.log').read_text(),
+    log = (folder / f'{mode}.log').read_text()
+    require(f'FRESHGENERATOR_HYDROLOGY_WORLD_PASS {mode} {seed}' in log,
             f'Native server did not complete {mode}')
+    require(not any(w in log for w in ('Server Watchdog', 'A single server tick took', 'OutOfMemoryError')),
+            f'Watchdog or memory failure in {mode}')
+    result['peak_rss_kib'] = int((folder / f'{mode}.rss-kib').read_text())
+    require(result['peak_rss_kib'] > 0, f'Missing peak RSS for {mode}')
     require(len(result['windows']) == len(plan['windows']), f'Missing sampled windows for {mode}')
     for actual, expected_window in zip(result['windows'], plan['windows']):
         require(actual['site'] == expected_window['site'] and len(actual['columns']) == SIDE * SIDE,
@@ -127,44 +136,60 @@ def hydrology_signature(result):
     return [[(c[2], c[3], c[4] & (1 | 2 | 4 | 8)) for c in w['columns'] if c[5]] for w in result['windows']]
 
 
-def normal_signature(result):
-    return [(w['site'], w['surfaceBiomes'], [c[1:] for c in w['columns']]) for w in result['windows']]
-
-
 def compare_normal(references, candidate):
-    """No normalized blocks: each admissible value must exist at that exact
-    coordinate in three independent runs of the unchanged published JAR."""
+    """Compare two fresh vanilla controls and the candidate with the same
+    feature order. Independently measure vanilla's sensitivity to reversing
+    only the order of feature writes in a third fresh vanilla world."""
     require(len(references) == 3, 'Three ordinary-world references required')
-    varied = changed = total = 0
+    runs = [*references, candidate]
+    require([r['feature_order'] for r in runs] == ['forward', 'forward', 'reverse', 'forward'],
+            'Missing paired feature schedules')
+    terrain = candidate['terrain_before_features']
+    require([w['site'] for w in candidate['windows']] == [w['site'] for w in terrain],
+            'Missing ordinary pre-feature sample')
+    for window in terrain:
+        fingerprint(window['blocksSha256'])
+        fingerprint(window['biomesSha256'])
+    require(all(r['terrain_before_features'] == terrain for r in references),
+            'Ordinary terrain blocks or stored biomes changed before features')
+    varied = total = 0
+    order_examples = []
     for wi, actual in enumerate(candidate['windows']):
-        controls = [r['windows'][wi] for r in references]
-        for old in controls:
-            require(old['site'] == actual['site'] and old['surfaceBiomes'] == actual['surfaceBiomes'],
-                    'Ordinary Minecraft coordinates or stored biome distribution changed')
-            require(old['nativeGeometrySha256'] == actual['nativeGeometrySha256'],
+        reference, repeat, reverse = (r['windows'][wi] for r in references)
+        for other in (reference, repeat, reverse):
+            require(other['site'] == actual['site'], 'Ordinary Minecraft coordinates changed')
+            require(other['nativeGeometrySha256'] == actual['nativeGeometrySha256'],
                     'Ordinary native terrain/water geometry changed')
-        for ci, col in enumerate(actual['columns']):
-            require(tuple(col[1:]) in {tuple(c['columns'][ci][1:]) for c in controls},
-                    f'Unobserved ordinary-world column at window {wi}, index {ci}')
-        for window in [*controls, actual]:
-            palette, states = window['blockPalette'], window['fullBlockStates']
-            require(palette and len(set(palette)) == len(palette), 'Invalid normal block palette')
-            require(len(states) == SIDE * SIDE * 384, 'Incomplete ordinary FULL block evidence')
-            require(all(type(v) is int and 0 <= v < len(palette) for v in states), 'Invalid block state index')
-        local_varied = 0
-        for index, value in enumerate(actual['fullBlockStates']):
-            observed = {c['blockPalette'][c['fullBlockStates'][index]] for c in controls}
-            state = actual['blockPalette'][value]
-            require(state in observed, f'Unobserved ordinary block at window {wi}, block {index}: {state}')
-            local_varied += len(observed) > 1
-            changed += state != controls[0]['blockPalette'][controls[0]['fullBlockStates'][index]]
-        require(local_varied <= len(actual['fullBlockStates']) // 1000,
-                'Ordinary references too variable for a reliable comparison')
-        varied += local_varied
+        expected = full_states(reference)
+        repeated = full_states(repeat)
+        backwards = full_states(reverse)
+        observed = full_states(actual)
+        for index, (first, second, alternative, state) in enumerate(zip(expected, repeated, backwards, observed)):
+            require(first == second, f'Vanilla repeat changed at window {wi}, block {index}: {first} -> {second}')
+            require(first == state, f'Ordinary FULL regression at window {wi}, block {index}: {first} -> {state}')
+            if first != alternative:
+                varied += 1
+                if len(order_examples) < 24:
+                    col, y = divmod(index, 384)
+                    site = actual['site']
+                    order_examples.append({
+                        'x': site['x'] + col % SIDE - RADIUS, 'y': y - 64,
+                        'z': site['z'] + col // SIDE - RADIUS, 'forward': first, 'reverse': alternative})
+        for field in ('columns', 'surfaceBiomes'):
+            require(reference[field] == repeat[field] == actual[field], f'Ordinary FULL {field} changed')
         total += len(actual['fullBlockStates'])
-    return {'sampled_full_blocks': total, 'native_variable_blocks': varied,
-            'candidate_changes_from_first_reference': changed, 'unobserved_candidate_blocks': 0,
-            'native_terrain_water_geometry_exact': True, 'all_stable_reference_blocks_exact': True}
+    return {'sampled_full_blocks': total, 'vanilla_feature_order_variable_blocks': varied,
+            'vanilla_order_difference_examples': order_examples, 'candidate_changed_full_blocks': 0,
+            'pre_feature_blocks_and_biomes_exact': True, 'native_terrain_water_geometry_exact': True}
+
+
+def full_states(window):
+    palette, states = window['blockPalette'], window['fullBlockStates']
+    require(palette and all(isinstance(s, str) and s for s in palette)
+            and len(set(palette)) == len(palette), 'Invalid normal block palette')
+    require(len(states) == SIDE * SIDE * 384, 'Incomplete ordinary FULL block evidence')
+    require(all(type(v) is int and 0 <= v < len(palette) for v in states), 'Invalid block state index')
+    return (palette[index] for index in states)
 
 
 def compare(folder, sha, seed, *, require_dh=False):
@@ -178,8 +203,7 @@ def compare(folder, sha, seed, *, require_dh=False):
     for mode in ('reverse', 'parallel', 'reload'):
         require(hydrology_signature(candidate) == hydrology_signature(observed[mode]),
                 f'Water, bed, or seal changed after {mode}')
-    normal_control = compare_normal([observed[m] for m in ('normal-baseline', 'normal-repeat-1', 'normal-repeat-2')],
-                                    observed['normal-candidate'])
+    normal_control = compare_normal([observed[m] for m in VANILLA_MODES], observed['normal-candidate'])
     if require_dh:
         dh = observed['distant-horizons']
         require(dh['distant_horizons'] == '3.3.4', 'Distant Horizons was not loaded')
@@ -203,11 +227,9 @@ def compare(folder, sha, seed, *, require_dh=False):
         'source_commit': sha, 'seed': seed, 'actual_server_runs': len(modes),
         'full_chunks_per_run': candidate['full_chunks'],
         'chunk_generation_ms': {mode: result['chunk_generation_ms'] for mode, result in observed.items()},
+        'peak_rss_kib': {mode: result['peak_rss_kib'] for mode, result in observed.items()},
         'water_matches_reverse_parallel_and_reload': True,
-        'normal_world_reference_envelope': normal_control,
-        'normal_world_canopy_differences': sum(a[0] != b[0] for old, new in
-            zip(observed['normal-baseline']['windows'], observed['normal-candidate']['windows'])
-            for a, b in zip(old['columns'], new['columns'])),
+        'normal_world_control': normal_control,
         'distant_horizons_installed_equal': require_dh,
         'observations_sha256': hashlib.sha256((folder / 'candidate.json').read_bytes()).hexdigest(),
         'windows': rows,
@@ -216,6 +238,6 @@ def compare(folder, sha, seed, *, require_dh=False):
 
 if __name__ == '__main__':
     folder, sha, seed = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-    report = compare(folder, sha, seed, require_dh=seed == 42)
+    report = compare(folder, sha, seed, require_dh=True)
     (folder / 'comparison.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'FRESHGENERATOR_HYDROLOGY_MATRIX_PASS {seed}')

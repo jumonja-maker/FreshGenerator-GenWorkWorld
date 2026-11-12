@@ -56,7 +56,7 @@ def prior_regressions(root, source):
     villages = {}
     technical = Path('build/reports/technical')
     technical.mkdir(parents=True, exist_ok=True)
-    for seed in SEEDS[:3]:
+    for seed in SEEDS:
         villages[str(seed)] = compare_villages(root / f'technical-world-fresh-{seed}', source, seed)
         folder = root / f'technical-structures-{seed}'
         metadata = read(folder / f'meta-{seed}.json')
@@ -69,12 +69,12 @@ def prior_regressions(root, source):
         require(relief['changed_voxels'] >= 50 and relief['sign_reversals'] == 0
                 and relief['max_absolute_density_correction'] <= 0.1201
                 and relief['deep_zero_checks'] > 0 and relief['high_zero_checks'] > 0, 'Alpine detail regressed')
-    require(sum(v['villages'] for v in villages.values()) >= 9, 'Insufficient village coverage')
+    require(sum(v['villages'] for v in villages.values()) >= 3 * len(SEEDS), 'Insufficient village coverage')
     normal = compare_folder(root / 'technical-world-normal-42', source, 'normal', 42)
-    subprocess.run([sys.executable, 'scripts/summarize_technical_audit.py'], check=True)
+    subprocess.run([sys.executable, 'scripts/summarize_technical_audit.py', *map(str, SEEDS)], check=True)
     topology = read(technical / 'technical-audit.json')
-    require(topology['source_commit'] == source and topology['server_runs'] == 6, 'Missing native structure runs')
-    for seed in SEEDS[:3]:
+    require(topology['source_commit'] == source and topology['server_runs'] == 2 * len(SEEDS), 'Missing native structure runs')
+    for seed in SEEDS:
         report = topology['summary'][f'fg-{seed}']
         require(report['detached_sky_terrain_components'] == 0 and report['village_suspended_piece_candidates'] == 0,
                 'Floating terrain or village')
@@ -98,12 +98,15 @@ def publish():
     hydrology = {}
     for seed in SEEDS:
         folder = root / f'hydrology-{seed}'
-        result = hydrology_checks.compare(folder, source, seed, require_dh=seed == 42)
-        modes = hydrology_checks.MODES + (('distant-horizons',) if seed == 42 else ())
+        result = hydrology_checks.compare(folder, source, seed, require_dh=True)
+        modes = (*hydrology_checks.MODES, 'distant-horizons')
         for mode in modes:
-            expected = build_data['reference_sha256'] if mode in ('baseline', 'normal-baseline', 'normal-repeat-1', 'normal-repeat-2') else build_data['jar_sha256']
+            expected = ('' if mode in hydrology_checks.VANILLA_MODES else
+                        build_data['reference_sha256'] if mode == 'baseline' else build_data['jar_sha256'])
             require(read(folder / f'{mode}.json')['jar_sha256'] == expected, 'Server used a different packaged JAR')
         hydrology[str(seed)] = result
+    require(any(r['normal_world_control']['vanilla_feature_order_variable_blocks'] > 0 for r in hydrology.values()),
+            'Vanilla feature-order control did not reproduce any FULL block variability')
     timings = [r['chunk_generation_ms'] for r in hydrology.values()]
     baseline = sum(row['baseline'] for row in timings)
     candidate = sum(row['candidate'] for row in timings)
@@ -125,10 +128,17 @@ def publish():
             'paired_generation_ms': {'baseline': baseline, 'candidate': candidate},
             'run_url': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
             'evidence': read(root / 'index.json')}
-    save(dist / f'validation-{VERSION}.json', data)
     raw = {str(p.relative_to(root)): read(p) for p in root.glob('hydrology-*/*.json')}
-    (audits / f'hydrology-{VERSION}.json.gz').write_bytes(gzip.compress(
+    for seed in SEEDS:
+        raw.update({str(p.relative_to(root)): read(p)
+                    for p in (root / f'technical-world-fresh-{seed}').glob('*.json')})
+        raw.update({str(p.relative_to(root)): read(p)
+                    for p in (root / f'technical-structures-{seed}').glob('*.json')})
+    raw_path = audits / f'hydrology-{VERSION}.json.gz'
+    raw_path.write_bytes(gzip.compress(
         json.dumps(raw, sort_keys=True, separators=(',', ':')).encode(), mtime=0))
+    data['raw_observations_sha256'] = checksum(raw_path)
+    save(dist / f'validation-{VERSION}.json', data)
     print('FRESHGENERATOR_HYDROLOGY_RELEASE_PASS', build_data['jar_sha256'])
 
 

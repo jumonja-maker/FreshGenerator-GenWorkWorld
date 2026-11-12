@@ -87,6 +87,14 @@ class HydrologyCompilerTest {
     }
 
     @Test
+    void aRaisedMountainBankRetainsTheWholeRoof() {
+        for (int depth = 2; depth <= 18; depth += 2) {
+            assertEquals(0, caveWeight(-1.75, 112.25, depth), 1e-5);
+        }
+        assertEquals(1, caveWeight(-1.75, 112.25, 44), 1e-5);
+    }
+
+    @Test
     void heightSubtractsTheSharedDrainageCut() {
         var values = new HashMap<>(Map.of(HYDROLOGY + "base_height", 74.0, HYDROLOGY + "cut", 13.0));
         assertEquals(61, evaluate(candidate.get(HydrologyCompiler.HEIGHT), values), 1e-5);

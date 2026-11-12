@@ -18,6 +18,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkPyramid;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -26,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
                        Map<String, String> blocksAtMissingStages, List<String> blockPalette,
                        int[] fullBlockStates, String nativeGeometrySha256) { }
+    record TerrainFingerprint(Site site, String blocksSha256, String biomesSha256) { }
 
     @Override
     public void onInitialize() {
@@ -97,16 +100,24 @@ public final class HydrologyWorldAudit implements ModInitializer {
         boolean concurrent = mode.equals("parallel");
         if (concurrent || mode.equals("reverse")) Collections.reverse(order);
         long generationStart = System.nanoTime();
+        boolean normal = mode.startsWith("normal-");
+        boolean reverseFeatures = mode.equals("normal-repeat-2");
+        var terrain = normal ? decorateInOrder(level, plan, order, reverseFeatures) : List.of();
         var chunks = load(server, level, order, concurrent);
         long generationNanos = System.nanoTime() - generationStart;
         List<Observation> observations = new ArrayList<>();
-        boolean candidateHydrology = !mode.startsWith("normal-") && !mode.endsWith("baseline");
-        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology, mode.startsWith("normal-"), level, generator));
+        boolean candidateHydrology = !normal && !mode.endsWith("baseline");
+        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology, normal, level, generator));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", mode);
         result.put("jar_sha256", System.getenv("FG_HYDROLOGY_JAR_SHA256"));
         result.put("seed", seed);
         result.put("settings", settings);
+        result.put("minecraft", FabricLoader.getInstance().getModContainer("minecraft").orElseThrow()
+                .getMetadata().getVersion().getFriendlyString());
+        result.put("fabric_loader", FabricLoader.getInstance().getModContainer("fabricloader").orElseThrow()
+                .getMetadata().getVersion().getFriendlyString());
+        result.put("freshgenerator_loaded", FabricLoader.getInstance().isModLoaded("freshgenerator"));
         result.put("full_chunks", chunks.size());
         result.put("requested_parallel", concurrent);
         result.put("plan_ms", planNanos / 1_000_000);
@@ -115,8 +126,61 @@ public final class HydrologyWorldAudit implements ModInitializer {
         result.put("java", Runtime.version().toString());
         result.put("distant_horizons", FabricLoader.getInstance().getModContainer("distanthorizons")
                 .map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse(""));
+        result.put("terrain_before_features", terrain);
+        result.put("feature_order", normal ? (reverseFeatures ? "reverse" : "forward") : "scheduler");
         result.put("windows", observations);
         return result;
+    }
+
+    /** Explicitly schedule every feature origin that can write into a sampled
+     * chunk. Ordinary-world comparisons vary this order in one vanilla control. */
+    private static List<TerrainFingerprint> decorateInOrder(ServerLevel level, Plan plan, List<ChunkPos> order,
+                                                             boolean reverse) throws Exception {
+        var source = level.getChunkSource();
+        var terrain = new TreeMap<Long, ChunkAccess>();
+        for (ChunkPos pos : order) {
+            ChunkAccess chunk = source.getChunk(pos.x(), pos.z(), ChunkStatus.TERRAIN, true);
+            if (chunk.getPersistedStatus() != ChunkStatus.TERRAIN) {
+                throw new AssertionError("Normal control already decorated before terrain capture: " + pos);
+            }
+            terrain.put(pos.pack(), chunk);
+        }
+        var fingerprints = new ArrayList<TerrainFingerprint>();
+        for (var window : plan.windows) fingerprints.add(terrainFingerprint(window.site, terrain));
+
+        int radius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES).blockStateWriteRadius();
+        var featureOrigins = new TreeMap<Long, ChunkPos>();
+        for (ChunkPos pos : order) {
+            for (int z = pos.z() - radius; z <= pos.z() + radius; z++) {
+                for (int x = pos.x() - radius; x <= pos.x() + radius; x++) {
+                    ChunkPos origin = new ChunkPos(x, z);
+                    featureOrigins.put(origin.pack(), origin);
+                }
+            }
+        }
+        var origins = reverse ? featureOrigins.descendingMap().values() : featureOrigins.values();
+        for (ChunkPos pos : origins) source.getChunk(pos.x(), pos.z(), ChunkStatus.FEATURES, true);
+        return fingerprints;
+    }
+
+    private static TerrainFingerprint terrainFingerprint(Site site, Map<Long, ChunkAccess> terrain) throws Exception {
+        var blocks = MessageDigest.getInstance("SHA-256");
+        var biomes = MessageDigest.getInstance("SHA-256");
+        var blockBytes = new IdentityHashMap<BlockState, byte[]>();
+        var pos = new BlockPos.MutableBlockPos();
+        for (int dz = 0; dz < SIDE; dz++) for (int dx = 0; dx < SIDE; dx++) {
+            int x = site.x + dx - RADIUS, z = site.z + dz - RADIUS;
+            var chunk = terrain.get(new ChunkPos(Math.floorDiv(x, 16), Math.floorDiv(z, 16)).pack());
+            for (int y = -64; y < 320; y++) {
+                var block = chunk.getBlockState(pos.set(x, y, z));
+                blocks.update(blockBytes.computeIfAbsent(block, b -> (b + "\n").getBytes(StandardCharsets.UTF_8)));
+                if (dx % 4 == 0 && dz % 4 == 0 && y % 4 == 0) {
+                    var biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y), QuartPos.fromBlock(z));
+                    biomes.update((biome.unwrapKey().orElseThrow().identifier() + "\n").getBytes(StandardCharsets.UTF_8));
+                }
+            }
+        }
+        return new TerrainFingerprint(site, HexFormat.of().formatHex(blocks.digest()), HexFormat.of().formatHex(biomes.digest()));
     }
 
     private static Map<Long, ChunkAccess> load(MinecraftServer server, ServerLevel level, List<ChunkPos> order, boolean concurrent) {

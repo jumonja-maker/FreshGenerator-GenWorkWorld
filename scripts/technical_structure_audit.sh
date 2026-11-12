@@ -2,7 +2,7 @@
 # One seed and its vanilla control; separate CI jobs preserve all raw observations.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-seed=${1:?seed required};[[ "$seed" = 42 || "$seed" = 1337 || "$seed" = -20261111 ]]
+seed=${1:?seed required};[[ "$seed" =~ ^-?[0-9]+$ ]]
 source_commit=${GITHUB_SHA:-$(git rev-parse HEAD)}
 mkdir -p build/reports/technical
 report=$(mktemp -d "build/reports/technical/structures-$seed.XXXXXX")

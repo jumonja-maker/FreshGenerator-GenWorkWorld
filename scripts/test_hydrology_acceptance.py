@@ -1,6 +1,7 @@
 """Mutation tests for the new evidence gates. No synthetic case is a server run."""
 import copy
 import hashlib
+from itertools import groupby
 import struct
 import unittest
 from unittest.mock import patch
@@ -20,7 +21,8 @@ def snapshot(height=80, changed=None):
     ids = [0] * 192
     if changed is not None:
         ids[(changed + 64) // 2] = 1
-    row = [0, 0, bits(80), bits(height), 0, *ids]
+    runs = [item for index, blocks in groupby(ids) for item in (sum(1 for _ in blocks), index)]
+    row = [0, 0, bits(80), bits(height), 0, *runs]
     h = hashlib.sha256()
     for i, index in enumerate(ids):
         h.update(f'0,{-64+2*i},0={palette[index]}\n'.encode())
@@ -52,7 +54,7 @@ class HydrologyAcceptanceTests(unittest.TestCase):
         a, b, c = historical.VillageEvidenceTests().fixtures()
         old = copy.deepcopy(b); old.update(phase='published', source_commit=PUBLISHED)
         for report in (a, old, b, c):
-            report['hydrology_observer_schema'] = 1
+            report['hydrology_observer_schema'] = 2
             for terrain in report['terrain']: terrain.update(snapshot())
         return [a, old, b, c]
 
@@ -80,28 +82,32 @@ class HydrologyAcceptanceTests(unittest.TestCase):
                   'nativeGeometrySha256': 'a' * 64, 'columns': [[80, 79, -999, -999, 0, 0] for _ in range(4)],
                   'blockPalette': ['Block{minecraft:stone}', 'Block{minecraft:oak_log}', 'Block{minecraft:lava}'],
                   'fullBlockStates': [0] * (4 * 384)}
-        return [{'windows': [copy.deepcopy(window)]} for _ in range(4)]
+        terrain = {'site': window['site'], 'blocksSha256': 'c' * 64, 'biomesSha256': 'd' * 64}
+        return [{'windows': [copy.deepcopy(window)], 'terrain_before_features': [copy.deepcopy(terrain)],
+                 'feature_order': order} for order in ('forward', 'forward', 'reverse', 'forward')]
 
-    def test_all_stable_normal_blocks_must_match(self):
+    def test_all_same_order_normal_blocks_must_match(self):
         data = self.normal_fixture()
         with patch.object(water, 'SIDE', 2):
-            self.assertEqual(0, water.compare_normal(data[:3], data[3])['unobserved_candidate_blocks'])
+            self.assertEqual(0, water.compare_normal(data[:3], data[3])['candidate_changed_full_blocks'])
             data[3]['windows'][0]['fullBlockStates'][50] = 2
             with self.assertRaises(ValueError): water.compare_normal(data[:3], data[3])
 
-    def test_native_variants_are_allowed_only_at_the_same_coordinate(self):
+    def test_reverse_vanilla_control_does_not_excuse_a_same_order_regression(self):
         data = self.normal_fixture()
-        data[1]['windows'][0]['fullBlockStates'][50] = 1
-        data[3]['windows'][0]['fullBlockStates'][50] = 1
+        data[2]['windows'][0]['fullBlockStates'][50] = 1
         with patch.object(water, 'SIDE', 2):
-            self.assertEqual(1, water.compare_normal(data[:3], data[3])['native_variable_blocks'])
-            data[3]['windows'][0]['fullBlockStates'][51] = 1
+            self.assertEqual(1, water.compare_normal(data[:3], data[3])['vanilla_feature_order_variable_blocks'])
+            data[3]['windows'][0]['fullBlockStates'][50] = 1
             with self.assertRaises(ValueError): water.compare_normal(data[:3], data[3])
 
     def test_geometry_and_biome_changes_are_never_native_variants(self):
         for field, value in [('nativeGeometrySha256', 'b' * 64), ('surfaceBiomes', {'minecraft:desert': 4})]:
             data = self.normal_fixture(); data[3]['windows'][0][field] = value
             with patch.object(water, 'SIDE', 2), self.assertRaises(ValueError): water.compare_normal(data[:3], data[3])
+        data = self.normal_fixture()
+        data[3]['terrain_before_features'][0]['blocksSha256'] = 'b' * 64
+        with patch.object(water, 'SIDE', 2), self.assertRaises(ValueError): water.compare_normal(data[:3], data[3])
 
 
 if __name__ == '__main__':

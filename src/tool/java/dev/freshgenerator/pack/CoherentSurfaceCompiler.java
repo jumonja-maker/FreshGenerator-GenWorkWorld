@@ -12,6 +12,8 @@ import java.util.*;
  * retain native caves deeper inside. No world-load deletion, no neighbour writes.
  */
 public final class CoherentSurfaceCompiler {
+    static final float MOUNTAIN_START = 64, MOUNTAIN_FULL = 112;
+    static final float MOUNTAIN_ROOF = 18, FULL_CAVE_DEPTH = 42;
     public static final String PREFIX = "freshgenerator:highlands_v2/";
     public static final String ROOT = "data/freshgenerator/worldgen/density_function/highlands_v2/";
     public static final Set<String> REPLACED = Set.of(ROOT + "final_density.json", ROOT + "preliminary_surface_level.json");
@@ -39,9 +41,9 @@ public final class CoherentSurfaceCompiler {
         put(out, "surface_density", object("type", "minecraft:squeeze", "input", mul(ref("depth_blocks"), 0.08)));
         // Surface openings in lowlands remain; elevated slopes gain a continuous roof.
         // At 42 blocks below the envelope native caves regain their full influence.
-        put(out, "mountain_protection", cache(smooth(64, 112, ref("height"))));
+        put(out, "mountain_protection", cache(smooth(MOUNTAIN_START, MOUNTAIN_FULL, ref("height"))));
         put(out, "cave_weight", sub(1.0, mul(ref("mountain_protection"),
-                sub(1.0, smooth(18, 42, ref("depth_blocks"))))));
+                sub(1.0, smooth(MOUNTAIN_ROOF, FULL_CAVE_DEPTH, ref("depth_blocks"))))));
         JsonElement body = min(ref("surface_density"), object("type", "minecraft:lerp",
                 "alpha", ref("cave_weight"), "first", ref("surface_density"), "second", ref("native_cave_body")));
         // Honour native blend data where present. Beardifier remains outside the cap:

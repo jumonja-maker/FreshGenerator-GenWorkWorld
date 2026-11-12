@@ -5,5 +5,5 @@
   "name": "FreshGenerator hydrology audit",
   "environment": "server",
   "entrypoints": {"main": ["dev.freshgenerator.audit.HydrologyWorldAudit"]},
-  "depends": {"freshgenerator": "*", "fabric-api": "*"}
+  "depends": {"minecraft": "26.3", "fabricloader": "0.20.1", "fabric-api": "*"}
 }

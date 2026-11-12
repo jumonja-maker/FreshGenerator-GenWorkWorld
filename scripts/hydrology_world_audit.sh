@@ -46,7 +46,7 @@ baseline=$root/dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar
 mkdir -p "$scratch/mods"
 cp "$api" "$assets/hydrology-audit.jar" "$scratch/mods/"
 cp "$launcher" "$scratch/launcher.jar"
-read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate}"
+read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate distant-horizons}"
 for mode in "${modes[@]}"; do
   preset=freshgenerator:world
   world=world-$mode
@@ -57,7 +57,7 @@ for mode in "${modes[@]}"; do
     reload) world=world-candidate ;;
     baseline) jar=$baseline ;;
     patch-baseline) jar=${FG_HYDROLOGY_PATCH_BASELINE_JAR:?initial patch JAR required} ;;
-    normal-baseline|normal-repeat-1|normal-repeat-2) preset=minecraft:normal; jar=$baseline; processors=1 ;;
+    normal-baseline|normal-repeat-1|normal-repeat-2) preset=minecraft:normal; jar=; processors=1 ;;
     normal-candidate) preset=minecraft:normal; processors=1 ;;
     distant-horizons)
       dh=${FG_HYDROLOGY_DH_JAR:-$assets/DistantHorizons-3.3.4.jar}
@@ -67,9 +67,14 @@ for mode in "${modes[@]}"; do
       ;;
     *) printf 'Unknown hydrology audit mode %s\n' "$mode" >&2; exit 1 ;;
   esac
-  cp "$jar" "$scratch/mods/freshgenerator.jar"
-  jar_sha=$(sha256sum "$jar")
-  jar_sha=${jar_sha%% *}
+  jar_sha=
+  if [ -n "$jar" ]; then
+    cp "$jar" "$scratch/mods/freshgenerator.jar"
+    jar_sha=$(sha256sum "$jar")
+    jar_sha=${jar_sha%% *}
+  else
+    rm -f "$scratch/mods/freshgenerator.jar"
+  fi
   printf 'eula=true\n' > "$scratch/eula.txt"
   cat > "$scratch/server.properties" <<PROPS
 level-name=$world
@@ -89,7 +94,8 @@ PROPS
   if ! (
     cd "$scratch"
     FG_HYDROLOGY_MODE="$mode" FG_HYDROLOGY_PLAN="$report/plan.json" FG_HYDROLOGY_JAR_SHA256="$jar_sha" \
-      timeout --signal=QUIT --kill-after=15s "${FG_HYDROLOGY_TIMEOUT:-480s}" "$java_cmd" -Xms512M -Xmx2G "-XX:ActiveProcessorCount=$processors" \
+      timeout --signal=QUIT --kill-after=15s "${FG_HYDROLOGY_TIMEOUT:-480s}" \
+      /usr/bin/time -f '%M' -o "$report/$mode.rss-kib" "$java_cmd" -Xms512M -Xmx2G "-XX:ActiveProcessorCount=$processors" \
       "-Dmax.bg.threads=$processors" "-Dfabric.installer.server.gameJar=$game" -jar launcher.jar nogui
   ) > "$report/$mode.log" 2>&1; then
     tail -n 100 "$report/$mode.log"

@@ -24,6 +24,10 @@ BUNDLES={
 }
 
 HYDROLOGY_BUNDLES = {
+ 'world_fresh_random_1': 'technical-world-fresh-2037157180504249802',
+ 'world_fresh_random_2': 'technical-world-fresh-801086821803359396',
+ 'structures_random_1': 'technical-structures-2037157180504249802',
+ 'structures_random_2': 'technical-structures-801086821803359396',
  'hydrology_42': 'hydrology-42',
  'hydrology_1337': 'hydrology-1337',
  'hydrology_negative': 'hydrology--20261111',

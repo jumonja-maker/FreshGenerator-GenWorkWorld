@@ -74,6 +74,7 @@ jobs:
       - name: Compile actual APIs and run contract tests
         run: |
           gradle --no-daemon --console=plain clean build hydrologyAuditJar
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
           python3 scripts/test_cave_full_stage_checks.py
@@ -106,6 +107,8 @@ jobs:
       world_fresh_42: ${{ steps.evidence.outputs.world_fresh_42 }}
       world_fresh_1337: ${{ steps.evidence.outputs.world_fresh_1337 }}
       world_fresh_negative: ${{ steps.evidence.outputs.world_fresh_negative }}
+      world_fresh_random_1: ${{ steps.evidence.outputs.world_fresh_random_1 }}
+      world_fresh_random_2: ${{ steps.evidence.outputs.world_fresh_random_2 }}
       world_normal_42: ${{ steps.evidence.outputs.world_normal_42 }}
     strategy:
       fail-fast: false
@@ -114,6 +117,8 @@ jobs:
           - {seed: '42', scope: fresh, evidence_key: world_fresh_42}
           - {seed: '1337', scope: fresh, evidence_key: world_fresh_1337}
           - {seed: '-20261111', scope: fresh, evidence_key: world_fresh_negative}
+          - {seed: '2037157180504249802', scope: fresh, evidence_key: world_fresh_random_1}
+          - {seed: '801086821803359396', scope: fresh, evidence_key: world_fresh_random_2}
           - {seed: '42', scope: normal, evidence_key: world_normal_42}
     steps:
       - uses: actions/checkout@v4
@@ -150,6 +155,8 @@ jobs:
       structures_42: ${{ steps.evidence.outputs.structures_42 }}
       structures_1337: ${{ steps.evidence.outputs.structures_1337 }}
       structures_negative: ${{ steps.evidence.outputs.structures_negative }}
+      structures_random_1: ${{ steps.evidence.outputs.structures_random_1 }}
+      structures_random_2: ${{ steps.evidence.outputs.structures_random_2 }}
     strategy:
       fail-fast: false
       matrix:
@@ -157,6 +164,8 @@ jobs:
           - {seed: '42', evidence_key: structures_42}
           - {seed: '1337', evidence_key: structures_1337}
           - {seed: '-20261111', evidence_key: structures_negative}
+          - {seed: '2037157180504249802', evidence_key: structures_random_1}
+          - {seed: '801086821803359396', evidence_key: structures_random_2}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -219,11 +228,7 @@ jobs:
         env:
           SEED: ${{ matrix.seed }}
           FG_HYDROLOGY_SKIP_BUILD: 'true'
-        run: |
-          if [ "$SEED" = 42 ]; then
-            export FG_HYDROLOGY_RUNS='candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate distant-horizons'
-          fi
-          bash scripts/hydrology_world_audit.sh "$SEED"
+        run: bash scripts/hydrology_world_audit.sh "$SEED"
       - name: Preserve run-bound native observations
         id: evidence
         if: always() && steps.native.outputs.report_dir != ''
@@ -231,7 +236,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REPORT: ${{ steps.native.outputs.report_dir }}
           EVIDENCE_KEY: ${{ matrix.evidence_key }}
-        run: python3 scripts/ci_evidence.py put "$EVIDENCE_KEY" "$REPORT" '*.json' '*.log' '*.properties'
+        run: python3 scripts/ci_evidence.py put "$EVIDENCE_KEY" "$REPORT" '*.json' '*.log' '*.properties' '*.rss-kib'
   publish:
     name: Verify release evidence and package
     needs: [build, check_patch, worlds, structures, hydrology]

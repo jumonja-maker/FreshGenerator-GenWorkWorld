@@ -25,7 +25,7 @@ import java.util.*;
  * Native farm-less layouts remain in the evidence; late air/lava failures are counted separately.
  */
 public final class VillageWorldAudit implements ModInitializer {
-    private static final Gson G=new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson G=new GsonBuilder().create();
     private record Location(String id,int chunkX,int chunkZ){}
     private record Study(Location location,StructureStart start,BoundingBox box,VillageTerrainModel model){}
     private ServerLevel level;private NoiseBasedChunkGenerator generator;private RandomState state;
@@ -59,7 +59,7 @@ public final class VillageWorldAudit implements ModInitializer {
             drainage=state.getClass().getMethod("freshgenerator$drainage").invoke(state);
             if(drainage!=null)waterAt=drainage.getClass().getMethod("waterAt",int.class,int.class);
         } catch(NoSuchMethodException absent) { drainage=null; }
-        report.addProperty("hydrology_observer_schema",1);
+        report.addProperty("hydrology_observer_schema",2);
         report.addProperty("source_commit",System.getenv("FG_VILLAGE_SOURCE"));report.addProperty("phase",System.getenv("FG_VILLAGE_PHASE"));
         report.addProperty("seed",level.getSeed());report.addProperty("settings",settings);
         Path locationsFile=Path.of(System.getenv("FG_VILLAGE_LOCATIONS"));List<Location> locations;
@@ -147,10 +147,15 @@ public final class VillageWorldAudit implements ModInitializer {
                 raw.add(Float.floatToIntBits((float)h));
                 raw.add(Float.floatToIntBits(currentHeights.sampleValue(context,x,0,z)));
                 raw.add(drainage==null?0:(Integer)waterAt.invoke(drainage,x,z));
+                int last=-1, length=0;
                 for(int y=-64;y<320;y+=2){p.set(x,y,z);String block=chunk.getBlockState(p).toString();
                     hash(outside,x+","+y+","+z+"="+block+"\n");
-                    raw.add(palette.computeIfAbsent(block,key->palette.size()));
+                    int id=palette.computeIfAbsent(block,key->palette.size());
+                    if(id!=last&&length!=0){raw.add(length);raw.add(last);length=0;}
+                    last=id;
+                    length++;
                 }
+                raw.add(length);raw.add(last);
                 outsideColumns.add(raw);
             }
         }

@@ -27,13 +27,19 @@ def outside_rows(report):
     require(isinstance(rows, list) and rows, 'Missing outside columns')
     seen, result, digest = set(), {}, hashlib.sha256()
     for row in rows:
-        require(len(row) == 197 and all(type(v) is int for v in row), 'Incomplete outside column')
+        require(7 <= len(row) <= 389 and len(row) % 2 == 1 and all(type(v) is int for v in row),
+                'Malformed outside column')
         x, z, original, current, profile = row[:5]
         require((x, z) not in seen, 'Duplicate outside coordinate')
         seen.add((x, z))
         number(original); number(current)
-        require(all(0 <= i < len(palette) for i in row[5:]), 'Invalid outside state index')
-        states = [palette[i] for i in row[5:]]
+        states, previous = [], -1
+        for length, index in zip(row[5::2], row[6::2]):
+            require(0 < length <= 192 - len(states), 'Invalid outside run length')
+            require(0 <= index < len(palette) and index != previous, 'Invalid outside run palette index')
+            states.extend([palette[index]] * length)
+            previous = index
+        require(len(states) == 192, 'Incomplete outside column')
         for i, state in enumerate(states):
             digest.update(f'{x},{-64+2*i},{z}={state}\n'.encode())
         result[x, z] = (original, current, profile, states)
@@ -60,7 +66,8 @@ def compare_outside(before, after):
                 continue
             y = -64 + 2 * index
             require((delta != 0 or profile != 0) and bottom <= y <= ceiling,
-                    f'Unmodeled outside change at {position[0]},{y},{position[1]}: {first} -> {actual}')
+                    f'Unmodeled outside change at {position[0]},{y},{position[1]}: {first} -> {actual}'
+                    f' (original={h0}, current={h1}, water={profile}, band={bottom}..{ceiling})')
             changed += 1
             if len(examples) < 16:
                 examples.append({'x': position[0], 'y': y, 'z': position[1], 'before': first,
@@ -74,7 +81,7 @@ def validate(baseline, published, candidate, reload, sha, seed):
                                 (candidate, 'candidate', sha), (reload, 'reload', sha)):
         require(data['completed'] is True and data['seed'] == seed and data['phase'] == phase
                 and data['source_commit'] == source, 'Wrong/incomplete village evidence')
-        require(data['hydrology_observer_schema'] == 1, 'Missing hydrology-aware raw evidence')
+        require(data['hydrology_observer_schema'] == 2, 'Missing hydrology-aware raw evidence')
         require(data['settings'] == 'freshgenerator:highlands_v2', 'Wrong village world')
         require(type(data['explicit_full_chunks']) is int and data['explicit_full_chunks'] > 0, 'No FULL village chunks')
         require(len(data['villages']) == len(data['terrain']) >= 3, 'Missing village coverage')
@@ -112,7 +119,6 @@ def validate(baseline, published, candidate, reload, sha, seed):
         require(sum(v[field] for v in published['villages']) > 0, 'Missing native coverage: ' + field)
     return {'source_commit': sha, 'reference_commit': PUBLISHED, 'seed': seed,
             'actual_server_runs': 4, 'villages': len(candidate['villages']),
-            'terrain_before': published['terrain'], 'terrain_after': candidate['terrain'],
             'full_before': published['villages'], 'full_after': candidate['villages'],
             'saved_world_equal': True, 'deep_blocks_identical_at_fixed_coordinates': True,
             'outside_terrain': terrain_checks,

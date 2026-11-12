@@ -1,8 +1,8 @@
 """Summarise actual observations. Findings are never converted into a claim of no bugs."""
-import json, os
+import json, os, sys
 from pathlib import Path
 p=Path('build/reports/technical')
-seeds=[42,1337,-20261111]
+seeds=[int(seed) for seed in sys.argv[1:]] or [42,1337,-20261111]
 reports={}
 for seed in seeds:
     for mode in ['fg','vanilla']:
