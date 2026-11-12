@@ -1,0 +1,32 @@
+name: Export fixed hydrology integration baseline
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-final-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d952a8328b659cf00902b7c23b334bc4f404e3c3
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Archive exact fixed source and changes
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz HEAD > integration-baseline.tar.gz
+          git diff 6cd5557eb7cbb909f7541ef3659cc7dd708bcd54 HEAD > integration-baseline.patch
+          git rev-parse HEAD HEAD^{tree} > integration-baseline-refs.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-hydrology-integration-baseline
+          path: |
+            integration-baseline.tar.gz
+            integration-baseline.patch
+            integration-baseline-refs.txt
+          retention-days: 7
+          if-no-files-found: error
