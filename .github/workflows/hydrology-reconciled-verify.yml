@@ -1,0 +1,115 @@
+name: Verify reconciled hydrology fixes
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-reconciled-verify.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6cd5557eb7cbb909f7541ef3659cc7dd708bcd54
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Reconcile two independently inspected source trees
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,hashlib,json,os,pathlib,re,subprocess,urllib.request
+          P=pathlib.Path
+          # Preserve the concurrent strict vanilla test fixture and raised-bank test.
+          normal=P('scripts/test_hydrology_acceptance.py').read_text()
+          normal=normal[normal.index('    def normal_fixture(self):'):normal.index("\n\nif __name__")]
+          test=P('src/test/java/dev/freshgenerator/HydrologyCompilerTest.java').read_text()
+          raised=re.search(r'    @Test\n    void aRaisedMountainBankRetainsTheWholeRoof\(\) \{.*?\n    \}\n',test,re.S).group()
+          sources={
+            'scripts/hydrology_village_checks.py':'69c86508bc0b2d2120b848e2103104940ae259eb',
+            'scripts/test_hydrology_acceptance.py':'ecc6dcb89740c5b4e9d582cef06c8bf2d9c6a2f1',
+            'scripts/village_audit.sh':'9d62c1d8dbd1be0d3e8e16675a214042a5bf4abb',
+            'src/audit/java/dev/freshgenerator/audit/VillageBridgeEvidence.java':'2182da093bbbf146f9b364b1f3ff9e7e5dfa000b',
+            'src/audit/java/dev/freshgenerator/audit/VillageWorldAudit.java':'a58eab14a61a3093b35b23532556d7a0509139d0',
+            'src/audit/java/dev/freshgenerator/audit/mixin/VillageBridgeObserverMixin.java':'8413c72ea2204253814763508b270347af83c311',
+            'src/audit/resources/freshgenerator-village-audit.mixins.json':'5e864a3560a1e7165ed54364a87e8f5f0348b903',
+            'src/main/java/dev/freshgenerator/mixin/TreeHydrologyMixin.java':'12b0b3e9e232312edbd18507d8de624fded3168a',
+            'src/test/java/dev/freshgenerator/HydrologyCompilerTest.java':'8e9d6871a594c0b49596029462b3e72ecf743a2c',
+            'src/test/java/dev/freshgenerator/mixin/TreeHydrologyGroundTest.java':'96f55329b1d41cb72e6ac7428404181f809f0c84',
+            'src/tool/java/dev/freshgenerator/pack/HydrologyCompiler.java':'5cae3c2c434c5c180291648e46038df5fe9a6c2a'}
+          for path,sha in sources.items():
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=60) as response: data=json.load(response)
+              raw=base64.b64decode(data['content']);assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+              p=P(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
+          p=P('.github/workflows/build.yml');s=p.read_text()
+          before="python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' \"$report\" '*.json' '*.log'"
+          assert s.count(before)==1;p.write_text(s.replace(before,before+" '*.json.gz'"))
+          p=P('scripts/village_audit.sh');s=p.read_text();s=s.replace('[[ "$seed" = 42 || "$seed" = 1337 || "$seed" = -20261111 ]]','[[ "$seed" =~ ^-?[0-9]+$ ]]');p.write_text(s)
+          p=P('scripts/hydrology_village_checks.py');s=p.read_text()
+          s=s.replace("require(len(row) == 197 and all(type(v) is int for v in row), 'Incomplete outside column')", "require(7 <= len(row) <= 389 and len(row) % 2 == 1 and all(type(v) is int for v in row),\n                'Malformed outside column')")
+          s=s.replace("        require(all(0 <= i < len(palette) for i in row[5:]), 'Invalid outside state index')\n        states = [palette[i] for i in row[5:]]", "        states, previous = [], -1\n        for length, index in zip(row[5::2], row[6::2]):\n            require(0 < length <= 192 - len(states), 'Invalid outside run length')\n            require(0 <= index < len(palette) and index != previous, 'Invalid outside run palette index')\n            states.extend([palette[index]] * length)\n            previous = index\n        require(len(states) == 192, 'Incomplete outside column')")
+          p.write_text(s)
+          p=P('scripts/test_hydrology_acceptance.py');s=p.read_text()
+          s=s.replace('import hashlib\n','import hashlib\nfrom itertools import groupby\n')
+          s=s.replace('    row = [0, 0, bits(original), bits(height), 0, *ids]', '    runs = [item for index, blocks in groupby(ids) for item in (sum(1 for _ in blocks), index)]\n    row = [0, 0, bits(original), bits(height), 0, *runs]')
+          s=s.replace('for i,index in enumerate(row[5:])','for i,index in enumerate(decode_ids(row))')
+          i=s.index('\n\nclass HydrologyAcceptanceTests');s=s[:i]+'\n\ndef decode_ids(row):\n    return [index for length,index in zip(row[5::2],row[6::2]) for _ in range(length)]\n'+s[i:]
+          start=s.index('    def normal_fixture(self):');end=s.index("\n\nif __name__");s=s[:start]+normal+s[end:];p.write_text(s)
+          p=P('src/test/java/dev/freshgenerator/HydrologyCompilerTest.java');s=p.read_text();s=s.replace('    @Test\n    void heightSubtractsTheSharedDrainageCut()',raised+'\n    @Test\n    void heightSubtractsTheSharedDrainageCut()');p.write_text(s)
+          p=P('src/audit/java/dev/freshgenerator/audit/VillageWorldAudit.java');s=p.read_text()
+          s=s.replace('                for(int y=-64;y<320;y+=2){p.set(x,y,z);String block=chunk.getBlockState(p).toString();','                int last=-1, length=0;\n                for(int y=-64;y<320;y+=2){p.set(x,y,z);String block=chunk.getBlockState(p).toString();')
+          s=s.replace('                    raw.add(palette.computeIfAbsent(block,key->palette.size()));','                    int id=palette.computeIfAbsent(block,key->palette.size());\n                    if(id!=last&&length!=0){raw.add(length);raw.add(last);length=0;}\n                    last=id;\n                    length++;')
+          s=s.replace('                outsideColumns.add(raw);','                raw.add(length);raw.add(last);\n                outsideColumns.add(raw);');p.write_text(s)
+          p=P('scripts/validate_hydrology_release.py');s=p.read_text()
+          s=s.replace("count >= 250, 'Insufficient Java coverage, including the four aquifer cache regressions'", "count >= 255, 'Insufficient Java coverage, including cache, highland roof and built-ground regressions'")
+          s=s.replace('from hydrology_village_checks import compare as compare_villages','from hydrology_village_checks import compare as compare_villages, read_report')
+          needle="    raw_path = audits / f'hydrology-{VERSION}.json.gz'"
+          s=s.replace(needle,"    for seed in SEEDS:\n        folder = root / f'technical-world-fresh-{seed}'\n        for mode in ('baseline', 'published', 'candidate', 'reload'):\n            raw[f'technical-world-fresh-{seed}/{mode}.json'] = read_report(folder, mode)\n"+needle);p.write_text(s)
+          subprocess.run(['git','add','.'],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip();print('RECONCILED_TREE',tree)
+          assert tree=='9a4b9eb0e5e7b01721a136bb579e989afec7d793'
+      - name: Compile and validate real Java25 APIs
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar 2>&1 | tee /tmp/reconciled-build.log
+          python3 -m unittest discover -s scripts -p 'test_*.py' 2>&1 | tee /tmp/reconciled-python.log
+          python3 scripts/validate_hydrology_patch.py
+      - name: Preserve only verified source objects for leased integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,hashlib,json,os,pathlib,subprocess,urllib.request
+          files=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines();assert len(files)==13
+          entries=[]
+          for path in files:
+              raw=pathlib.Path(path).read_bytes();sha=hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs',data=json.dumps({'encoding':'base64','content':base64.b64encode(raw).decode('ascii')}).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(req,timeout=60) as response: result=json.load(response)
+              assert result['sha']==sha;entries.append({'path':path,'mode':'100644','type':'blob','sha':sha})
+          manifest={'base':'6cd5557eb7cbb909f7541ef3659cc7dd708bcd54','tree':'9a4b9eb0e5e7b01721a136bb579e989afec7d793','entries':entries}
+          pathlib.Path('/tmp/reconciled-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print('VERIFIED_SOURCE_MANIFEST',json.dumps(manifest))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reconciled-hydrology-compiled-evidence
+          path: |
+            /tmp/reconciled-build.log
+            /tmp/reconciled-python.log
+            /tmp/reconciled-manifest.json
+            build/test-results/test/
+            build/reports/village-release/
+          retention-days: 7
+          if-no-files-found: error
