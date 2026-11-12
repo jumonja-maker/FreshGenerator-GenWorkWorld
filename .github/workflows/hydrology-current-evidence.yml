@@ -20,9 +20,17 @@ jobs:
           import base64,gzip,hashlib,json,os,pathlib,re,urllib.request
           run=43316322914; source='3a9ad243c76cae7e1e6c4bb444b3344639f68878'
           root=pathlib.Path('evidence');root.mkdir()
+          class SignedRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if redirected is not None:
+                      redirected.remove_header('Authorization')
+                      redirected.remove_header('Accept')
+                  return redirected
+          opener=urllib.request.build_opener(SignedRedirect())
           def get(path,binary=False):
               req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-              with urllib.request.urlopen(req,timeout=90) as response: raw=response.read()
+              with opener.open(req,timeout=90) as response: raw=response.read()
               return raw if binary else json.loads(raw)
           jobs=get('/actions/runs/'+str(run)+'/jobs?per_page=100')['jobs']
           (root/'jobs.json').write_text(json.dumps(jobs))
