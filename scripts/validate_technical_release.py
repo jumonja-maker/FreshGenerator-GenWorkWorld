@@ -47,10 +47,10 @@ def build():
  suites=[E.parse(p).getroot() for p in P('build/test-results/test').glob('TEST-*.xml')]
  require(bool(suites),'No Java test reports')
  require(all(int(s.get(k,0))==0 for s in suites for k in ('failures','errors','skipped')),'Java test failure/skip')
- count=sum(int(s.get('tests',0)) for s in suites);require(count>=164,'Missing Java tests')
- metrics={name:read(P('build/reports')/name) for name in ['biome-region-metric-tests.json','cave-metrics-tests.json','cave-full-stage-tests.json','technical-update-check-tests.json','ci-evidence-tests.json']}
+ count=sum(int(s.get('tests',0)) for s in suites);require(count>=168,'Missing Java tests')
+ metrics={name:read(P('build/reports')/name) for name in ['biome-region-metric-tests.json','cave-metrics-tests.json','cave-full-stage-tests.json','technical-update-check-tests.json','ci-evidence-tests.json','technical-reference-tests.json']}
  require(all(m[k]==0 for m in metrics.values() for k in ('failures','errors','skipped')),'Metric test failure/skip')
- require(sum(m['tests'] for m in metrics.values())>=67,'Missing metric tests')
+ require(sum(m['tests'] for m in metrics.values())>=83,'Missing metric tests')
  replay=P('build/reports/technical-update/reproducible.sha256');require(replay.exists(),'Missing first-build fingerprints')
  expected={line.split()[1]:line.split()[0] for line in replay.read_text().splitlines()}
  for p in (jar,sources):require(expected[str(p)]==checksum(p),'Non-reproducible JAR: '+str(p))
@@ -81,7 +81,7 @@ def publish():
  audit=read(technical/'technical-audit.json');require(audit['source_commit']==SHA and audit['server_runs']==6,'Missing structure runs')
  for seed in [42,1337,-20261111]:
   r=audit['summary'][f'fg-{seed}'];require(r['detached_sky_terrain_components']==0 and r['village_suspended_piece_candidates']==0,'Terrain/support regression')
- result={**b,'actual_server_runs':22,'server_breakdown':{'paired_worlds_reference_repeat_and_reload':16,'structures_and_vanilla_controls':6},
+ result={**b,'actual_server_runs':26,'server_breakdown':{'paired_worlds_three_references_and_reload':20,'structures_and_vanilla_controls':6},
   'run_url':f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
   'ci_evidence':read(root/'index.json'),'one_public_world':'freshgenerator:world','paired_worlds':pairs,'structure_and_topology_summary':audit['summary'],
   'limits':['Fixed seeds and sampled FULL columns; not a proof for all worlds','Native structure warnings retained; no villager navigation simulation',

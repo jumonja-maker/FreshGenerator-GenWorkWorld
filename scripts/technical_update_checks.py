@@ -15,7 +15,7 @@ def require(value, message):
 def digest(value):
     require(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value), 'Missing/invalid snapshot hash')
 
-def compare(a, b, c, source_commit, scope, seed):
+def compare(a, b, c, source_commit, scope, seed, reference_repeats=None):
     require((scope, seed) in SCENARIOS, 'Unexpected scenario')
     require(a['source_commit'] == BASE_COMMIT, 'Not the published 0.3.2 reference')
     require(b['source_commit'] == c['source_commit'] == source_commit, 'Stale candidate report')
@@ -36,7 +36,22 @@ def compare(a, b, c, source_commit, scope, seed):
             digest(old[key])
         require(decode(old) == decode(new), 'Biome IDs changed')
         samples += len(decode(old))
-    require(a['full_windows'] == b['full_windows'] == c['full_windows'], 'FULL blocks, water, biomes or reload differ')
+    require(b['full_windows'] == c['full_windows'], 'Candidate FULL sample changed after reload')
+    references = [a]
+    envelope = None
+    if reference_repeats is None:
+        require(a['full_windows'] == b['full_windows'], 'FULL blocks, water or biomes differ')
+    else:
+        require(len(reference_repeats) == 2, 'Two additional clean reference worlds are required')
+        for repeated, label in zip(reference_repeats, ('reference-repeat', 'reference-repeat-2')):
+            require(repeated['source_commit'] == BASE_COMMIT and repeated['seed'] == seed
+                    and repeated['settings'] == expected and repeated['completed'] is True
+                    and repeated['mode'] == 'reference' and repeated['pass'] == label, 'Invalid repeated reference')
+            require(repeated['observer_sha256'] == a['observer_sha256'], 'Repeated observer differs')
+            require(repeated['maps'] == a['maps'], 'Reference climate/biome maps are not repeatable')
+        references += list(reference_repeats)
+        from technical_reference_envelope import validate_full
+        envelope = validate_full([r['full_windows'] for r in references], b['full_windows'])
     require(len(b['full_windows']) >= (4 if scope == 'fresh' else 1), 'Insufficient FULL windows')
     columns = 0
     for window in b['full_windows']:
@@ -45,26 +60,33 @@ def compare(a, b, c, source_commit, scope, seed):
             digest(window[key])
         require(sum(window['biomes'].values()) == 256, 'Missing stored biome samples')
         columns += window['sample_columns']
-    for report in (a, b, c):
+    for report in (*references, b, c):
         require(report['stored_biome_checks'] == columns, 'Stored biome check count mismatch')
         require(report['explicit_full_chunks'] > 0, 'No FULL chunks')
-    for name in ('forest_telemetry', 'cave_telemetry'):
-        require(a[name] == b[name], 'Runtime decisions/counts changed: ' + name)
-        require(all(type(v) is int and v >= 0 for v in b[name].values()), 'Bad telemetry')
+    if reference_repeats is None:
+        for name in ('forest_telemetry', 'cave_telemetry'):
+            require(a[name] == b[name], 'Runtime decisions/counts changed: ' + name)
+            require(all(type(v) is int and v >= 0 for v in b[name].values()), 'Bad telemetry')
+        counter_evidence = {'cave_counts_exact_in_all_controls': True,
+                            'forest_counts_equal_first_reference': True}
+    else:
+        from technical_reference_envelope import validate_telemetry
+        counter_evidence = validate_telemetry(references, b)
     forest = sum(v for k, v in b['forest_telemetry'].items() if k.endswith('_attempts') and not k.endswith('_opening_attempts'))
     if scope == 'fresh':
         require(forest > 0 and b['cave_telemetry']['guard_instances'] > 0, 'Updated runtime paths were not exercised')
     else:
         require(not any(b['forest_telemetry'].values()) and not any(b['cave_telemetry'].values()), 'Policy leaked to ordinary Minecraft')
     return {'source_commit': source_commit, 'reference_commit': BASE_COMMIT, 'seed': seed, 'scope': scope,
-            'actual_server_runs': 3, 'native_map_samples_per_version': samples,
+            'actual_server_runs': 3 if reference_repeats is None else 5, 'native_map_samples_per_version': samples,
             'stored_biome_columns_per_version': columns, 'full_block_states_hashed_per_version': columns * 384,
             'explicit_full_chunks_per_pass': b['explicit_full_chunks'],
-            'worldgen_maps_equal': True, 'full_sample_equal': True, 'saved_world_equal': True,
-            'runtime_decisions_equal': True, 'forest_attempts': forest,
+            'worldgen_maps_equal': True, 'full_sample_equal': a['full_windows'] == b['full_windows'], 'saved_world_equal': True,
+            'reference_repeat_equal': all(r['full_windows'] == a['full_windows'] for r in references),
+            'reference_block_evidence': envelope, 'runtime_counter_evidence': counter_evidence, 'forest_attempts': forest,
             'forest_telemetry': b['forest_telemetry'], 'cave_telemetry': b['cave_telemetry'],
             'observer_sha256': b['observer_sha256'],
-            'limitations': 'Fixed maps and sampled FULL columns, not an exhaustive client/modpack or performance test.'}
+            'limitations': 'Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.'}
 
 def compare_folder(folder, source_commit, scope, seed):
     folder = Path(folder)
@@ -72,23 +94,18 @@ def compare_folder(folder, source_commit, scope, seed):
     for label in ('reference', 'candidate', 'candidate-reload'):
         require('FRESHGENERATOR_BIOME_REGION_WORLD_PASS' in (folder / (label + '.log')).read_text(), 'Missing actual server completion')
     from technical_update_diagnostics import full_differences
-    repeat = json.loads((folder / 'reference-repeat.json').read_text())
-    require('FRESHGENERATOR_BIOME_REGION_WORLD_PASS' in (folder / 'reference-repeat.log').read_text(), 'Missing reference repeat completion')
+    repeats = [json.loads((folder / (label + '.json')).read_text()) for label in ('reference-repeat', 'reference-repeat-2')]
+    for label in ('reference-repeat', 'reference-repeat-2'):
+        require('FRESHGENERATOR_BIOME_REGION_WORLD_PASS' in (folder / (label + '.log')).read_text(), 'Missing reference completion')
     diagnostics = {
         'reference_vs_candidate': full_differences(reports[0], reports[1]),
         'candidate_vs_reload': full_differences(reports[1], reports[2]),
-        'reference_vs_reference_repeat': full_differences(reports[0], repeat),
-        'telemetry': {label: {key: r[key] for key in ('forest_telemetry','cave_telemetry')} for label,r in zip(('reference','candidate','candidate-reload','reference-repeat'),(*reports,repeat))}}
+        'reference_vs_reference_repeats': [full_differences(reports[0], r) for r in repeats],
+        'telemetry': {label: {key: r[key] for key in ('forest_telemetry','cave_telemetry')} for label,r in zip(
+            ('reference','candidate','candidate-reload','reference-repeat','reference-repeat-2'),(*reports,*repeats))}}
     (folder / 'diagnostics.json').write_text(json.dumps(diagnostics,indent=2)+'\n')
     print('TECH_DIFFERENCE_DETAILS '+json.dumps(diagnostics))
-    require(repeat['source_commit']==BASE_COMMIT and repeat['seed']==seed and repeat['settings']==reports[0]['settings']
-            and repeat['mode']=='reference' and repeat['pass']=='reference-repeat' and repeat['completed'] is True, 'Invalid repeated reference')
-    require(repeat['observer_sha256']==reports[0]['observer_sha256'], 'Repeated reference observer differs')
-    require(repeat['maps']==reports[0]['maps'], 'Reference maps are not repeatable')
-    require(repeat['full_windows']==reports[0]['full_windows'], 'Reference FULL sample is not repeatable')
-    result = compare(*reports, source_commit, scope, seed)
-    result['actual_server_runs'] = 4
-    result['reference_repeat_equal'] = True
+    result = compare(*reports, source_commit, scope, seed, reference_repeats=repeats)
     result['input_sha256'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.glob('*.json') if p.name != 'comparison.json'}
     (folder / 'comparison.json').write_text(json.dumps(result, indent=2) + '\n')
     return result

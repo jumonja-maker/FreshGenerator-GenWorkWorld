@@ -2,66 +2,71 @@ package dev.freshgenerator.core;
 
 import java.util.Arrays;
 
-/** Bounded, allocation-free lookup for pure column samples. Owned by one generation task,
- * never shared across threads/worlds. Full 64-bit keys distinguish negative coordinates.
- * Four-way sets replace one entry on collision instead of flushing the entire cache.
- * NaN means a miss; only finite values are accepted, including both signed zeroes.
+/** Primitive task-owned cache preserving the previous height HashMap's hit/miss trace.
+ * A new key at capacity starts the same logical empty generation as the old map. Epoch
+ * stamps make that operation O(1) without clearing an array or allocating boxed entries.
+ * Crucially, an earlier collision must NOT evict a value and reorder native sampling.
+ * Backing arrays are lazy: unsupported forest features pay no fixed buffer allocation.
+ * Not shared across generation tasks, threads or worlds. NaN is the miss sentinel.
  */
 public final class ColumnFloatCache {
-    private static final int WAYS = 4;
-    private final long[] keys;
-    private final float[] values;
-    private final byte[] next;
-    private final int setMask;
+    private final int capacity, mask;
+    private long[] keys;
+    private float[] values;
+    private int[] epochs;
+    private int epoch = 1, size;
 
     public ColumnFloatCache(int capacity) {
-        if (capacity < WAYS || capacity > (1 << 20) || (capacity & (capacity - 1)) != 0)
+        if (capacity < 4 || capacity > (1 << 20) || (capacity & (capacity - 1)) != 0)
             throw new IllegalArgumentException("Capacity must be a power of two from 4 through 1048576");
-        keys = new long[capacity];
-        values = new float[capacity];
-        Arrays.fill(values, Float.NaN);
-        next = new byte[capacity / WAYS];
-        setMask = next.length - 1;
+        this.capacity = capacity;
+        mask = capacity * 2 - 1;
     }
 
     public float get(long key) {
-        int base = base(key);
-        for (int way = 0; way < WAYS; way++) {
-            int slot = base + way;
-            if (keys[slot] == key && !Float.isNaN(values[slot])) return values[slot];
-        }
-        return Float.NaN;
+        if (keys == null) return Float.NaN;
+        int slot = find(key);
+        return epochs[slot] == epoch ? values[slot] : Float.NaN;
     }
 
     public void put(long key, float value) {
         if (!Float.isFinite(value)) throw new IllegalArgumentException("Column sample must be finite");
-        int base = base(key), empty = -1;
-        for (int way = 0; way < WAYS; way++) {
-            int slot = base + way;
-            if (!Float.isNaN(values[slot]) && keys[slot] == key) {
-                values[slot] = value;
-                return;
-            }
-            if (empty < 0 && Float.isNaN(values[slot])) empty = slot;
+        if (keys == null) {
+            keys = new long[mask + 1];
+            values = new float[mask + 1];
+            epochs = new int[mask + 1];
         }
-        if (empty < 0) {
-            int set = base / WAYS;
-            empty = base + next[set];
-            next[set] = (byte)((next[set] + 1) & (WAYS - 1));
+        int slot = find(key);
+        if (epochs[slot] == epoch) {
+            values[slot] = value;
+            return;
         }
-        keys[empty] = key;
-        values[empty] = value;
+        if (size == capacity) {
+            if (epoch == Integer.MAX_VALUE) {
+                Arrays.fill(epochs, 0);
+                epoch = 1;
+            } else epoch++;
+            size = 0;
+            slot = find(key);
+        }
+        keys[slot] = key;
+        values[slot] = value;
+        epochs[slot] = epoch;
+        size++;
     }
 
-    public int capacity() { return values.length; }
+    public int capacity() { return capacity; }
 
-    private int base(long key) {
+    private int find(long key) {
         long h = key;
         h ^= h >>> 33;
         h *= 0xff51afd7ed558ccdL;
         h ^= h >>> 33;
         h *= 0xc4ceb9fe1a85ec53L;
         h ^= h >>> 33;
-        return ((int)h & setMask) * WAYS;
+        int slot = (int)h & mask;
+        // At most half the table is live, so an empty slot always exists.
+        while (epochs[slot] == epoch && keys[slot] != key) slot = (slot + 1) & mask;
+        return slot;
     }
 }

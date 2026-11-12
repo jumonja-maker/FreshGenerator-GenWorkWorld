@@ -29,6 +29,7 @@ jobs:
           python3 scripts/test_cave_full_stage_checks.py
           python3 scripts/test_technical_update_checks.py
           python3 scripts/test_ci_evidence.py
+          python3 scripts/test_technical_reference_envelope.py
       - name: Verify repeatable package and unchanged generation data
         run: |
           mkdir -p build/reports/technical-update

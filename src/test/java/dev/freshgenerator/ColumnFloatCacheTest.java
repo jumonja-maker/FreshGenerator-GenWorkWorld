@@ -33,11 +33,11 @@ class ColumnFloatCacheTest {
             assertThrows(IllegalArgumentException.class,()->c.put(17,v));
         assertEquals(99,c.get(17));
     }
-    @Test void fourWayCollisionEvictsOnlyOneEntry() {
+    @Test void logicalRolloverKeepsTheOldMapMissSchedule() {
         var c=new ColumnFloatCache(4);for(int i=0;i<4;i++)c.put(i,i+1);
         c.put(4,5);int retained=0;
         for(int i=0;i<4;i++)if(!Float.isNaN(c.get(i))){assertEquals(i+1,c.get(i));retained++;}
-        assertEquals(3,retained);assertEquals(5,c.get(4));
+        assertEquals(0,retained);assertEquals(5,c.get(4));
     }
     @Test void updatingPresentKeyDoesNotEvictNeighbours() {
         var c=new ColumnFloatCache(4);for(int i=0;i<4;i++)c.put(i,i);
@@ -60,6 +60,40 @@ class ColumnFloatCacheTest {
             float h=c.get(k);if(Float.isNaN(h)){h=value(k);c.put(k,h);}
             assertEquals(Float.floatToRawIntBits(value(k)),Float.floatToRawIntBits(h));
         }
+    }
+    @Test void everyHitAndMissMatchesTheOriginalBoundedHashMap() {
+        for(int capacity:new int[]{4,16,64,1024}) {
+            var actual=new ColumnFloatCache(capacity);Map<Long,Float> expected=new HashMap<>();var random=new Random(42);
+            for(int i=0;i<100000;i++) {
+                long k=random.nextInt(capacity*3)-capacity;Float before=expected.get(k);float now=actual.get(k);
+                assertEquals(before==null,Float.isNaN(now),"Changed native sampling trace at "+i);
+                if(before!=null)assertEquals(Float.floatToRawIntBits(before),Float.floatToRawIntBits(now));
+                else {
+                    float v=(float)Math.sin(k)*280;
+                    if(expected.size()>=capacity)expected.clear();expected.put(k,v);actual.put(k,v);
+                }
+            }
+        }
+    }
+    @Test void negativeAndExtremeFiniteHeightsAreNotMissing() {
+        var c=new ColumnFloatCache(4);long k=0;
+        for(float v:new float[]{-Float.MAX_VALUE,-64,-Float.MIN_VALUE,Float.MIN_VALUE,Float.MAX_VALUE}) {
+            c.put(k,v);assertEquals(Float.floatToRawIntBits(v),Float.floatToRawIntBits(c.get(k)));k++;
+        }
+    }
+    @Test void unusedCacheDoesNotAllocateHeightBuffers()throws Exception {
+        var c=new ColumnFloatCache(1024);
+        for(int i=0;i<100;i++)assertTrue(Float.isNaN(c.get(i)));
+        for(String name:new String[]{"keys","values","epochs"}) {
+            var field=ColumnFloatCache.class.getDeclaredField(name);field.setAccessible(true);assertNull(field.get(c));
+        }
+    }
+    @Test void epochRolloverCannotResurrectOldEntries()throws Exception {
+        var c=new ColumnFloatCache(4);c.put(123,99);
+        var field=ColumnFloatCache.class.getDeclaredField("epoch");field.setAccessible(true);field.setInt(c,Integer.MAX_VALUE);
+        var size=ColumnFloatCache.class.getDeclaredField("size");size.setAccessible(true);size.setInt(c,0);
+        for(int i=0;i<4;i++)c.put(i,i);
+        c.put(7,7);assertEquals(7,c.get(7));assertTrue(Float.isNaN(c.get(123)));
     }
     @Test void separateTaskCachesDoNotLeakWorldValues()throws Exception {
         try(var pool=Executors.newFixedThreadPool(4)){

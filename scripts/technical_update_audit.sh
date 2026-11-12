@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Paired real worlds using unchanged production code from each commit. Test-only telemetry
-# is added to the same observer on both sides; it does not change worldgen or filters.
+# Same observer, three independent controls, candidate and saved-world reload.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 seed=${1:-42};scope=${2:-fresh}
@@ -25,7 +24,6 @@ assert s.count(needle)==1
 s=s.replace(needle,'out.add("forest_telemetry",G.toJsonTree(dev.freshgenerator.forest.ForestTelemetry.snapshot()));\n'
  '  out.add("cave_telemetry",G.toJsonTree(dev.freshgenerator.cave.CaveTelemetry.snapshot()));\n'
  '  out.addProperty("observer_sha256",System.getenv("FG_TECH_OBSERVER"));\n  '+needle)
-# Capture exact block samples for diagnosing failures, not relaxing equality.
 needle='Map<Object,byte[]> encodings=new IdentityHashMap<>();'
 assert s.count(needle)==1
 s=s.replace(needle,needle+'java.util.List<String> palette=new java.util.ArrayList<>();java.util.Map<String,Integer> stateIds=new java.util.HashMap<>();int[] observedStates=new int[256*384];int observation=0;')
@@ -54,14 +52,14 @@ simulation-distance=2
 max-tick-time=600000
 spawn-protection=0
 PROPS
- passes=2
+ passes=2;[ "$mode" = reference ]&&passes=3
  for ((i=1;i<=passes;i++));do
   label=$mode
-  if [ "$i" = 2 ];then
+  if [ "$i" -ge 2 ];then
    label=candidate-reload
    if [ "$mode" = reference ];then
-    label=reference-repeat
-    repeated="$tree/technical-reference-repeat";mkdir -p "$repeated"
+    label=reference-repeat;[ "$i" = 3 ]&&label=reference-repeat-2
+    repeated="$tree/technical-$label";mkdir -p "$repeated"
     cp "$run/server.properties" "$run/eula.txt" "$repeated/"
     run=$repeated
    fi
