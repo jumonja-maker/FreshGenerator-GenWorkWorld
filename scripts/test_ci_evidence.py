@@ -1,5 +1,5 @@
 """Offline transport validation. No credentials or external API calls in these tests."""
-import base64,copy,gzip,hashlib,json,tempfile,unittest
+import base64,gzip,json,os,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 import ci_evidence as ci
@@ -61,6 +61,15 @@ class EvidenceTest(unittest.TestCase):
  def test_small_size_limit_fails_closed(self):
   with patch.object(ci,'MAX_RAW',16):
    with self.assertRaises(ValueError):self.extract()
+ def test_pack_checks_size_before_reading_an_oversized_file(self):
+  with patch.object(ci,'MAX_RAW',16), patch.object(Path,'read_bytes',side_effect=AssertionError('unbounded read')):
+   with self.assertRaisesRegex(ValueError,'Evidence exceeds size budget'):
+    ci.pack(self.input,['sample.jar'],'technical-build',IDENTITY)
+ def test_conflicting_file_and_directory_leave_no_partial_output(self):
+  data=self.changed(lambda d:d['files'].update({'sample.json/nested':d['files']['sample.jar']}))
+  with self.assertRaisesRegex(ValueError,'Conflicting file and directory'):
+   self.extract(data)
+  self.assertFalse((self.root/'out').exists())
  def test_blob_sha_is_git_fingerprint(self):self.assertEqual('ce013625030ba8dba906f756967f9e9ca394464a',ci.blob_sha(b'hello\n'))
  def test_bad_provenance_rejected(self):
   with self.assertRaises(ValueError):ci.provenance(dict(IDENTITY,GITHUB_SHA='not-a-sha'))
@@ -70,6 +79,32 @@ class EvidenceTest(unittest.TestCase):
  def test_missing_outputs_cannot_publish(self):
   needs={n:{'result':'success','outputs':{}} for n in ['build','worlds','structures']}
   with self.assertRaises(ValueError):ci.get_all(needs,self.root/'out')
+ def test_late_failure_leaves_no_partial_restore_and_retry_succeeds(self):
+  jobs={n:{'result':'success','outputs':{}} for n in ('build','worlds','structures')}
+  blobs={};paths={}
+  for key,name in ci.BUNDLES.items():
+   data=ci.pack(self.input,['sample.json'],name,IDENTITY)
+   sha=ci.blob_sha(data);paths[key]='/'+sha
+   blobs[paths[key]]={'sha':sha,'size':len(data),'encoding':'base64','content':base64.b64encode(data).decode()}
+   job='build' if key=='build_blob' else 'worlds' if key.startswith('world_') else 'structures'
+   jobs[job]['outputs'][key]=sha
+  failing=paths[sorted(paths)[-1]]
+  def late_failure(path):
+   if path==failing:raise OSError('last blob unavailable')
+   return blobs[path]
+  destination=self.root/'out'
+  with patch.dict(os.environ,IDENTITY):
+   with patch.object(ci,'request',side_effect=late_failure):
+    with self.assertRaisesRegex(OSError,'last blob unavailable'):
+     ci.get_all(jobs,destination)
+   self.assertFalse(destination.exists())
+   self.assertEqual([],list(self.root.glob('.evidence-*')))
+   with patch.object(ci,'request',side_effect=blobs.__getitem__):
+    ci.get_all(jobs,destination)
+  index=json.loads((destination/'index.json').read_text())
+  self.assertEqual(set(ci.BUNDLES.values()),{b['name'] for b in index['bundles']})
+  for name in ci.BUNDLES.values():
+   self.assertEqual(b'{"sample":1}\n',(destination/name/'sample.json').read_bytes())
 
 if __name__=='__main__':
  result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(EvidenceTest))

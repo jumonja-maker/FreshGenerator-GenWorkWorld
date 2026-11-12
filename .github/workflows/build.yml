@@ -8,6 +8,32 @@ concurrency:
   group: core-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  check_patch:
+    name: Validate separate patch
+    if: "github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Canonical dependency fallback
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+      - name: Compile and run regression tests
+        run: |
+          gradle --no-daemon --console=plain clean build
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          sha256sum build/libs/*.jar
+      - name: Sample structures in two fresh worlds
+        if: contains(github.event.head_commit.message, '[audit-structures]')
+        run: bash scripts/technical_structure_audit.sh 42
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
@@ -35,6 +61,7 @@ jobs:
           python3 scripts/test_ci_evidence.py
           python3 scripts/test_technical_reference_envelope.py
           python3 scripts/test_village_checks.py
+          python3 scripts/test_technical_structure_audit.py
       - name: Reproduce JAR and check unchanged unrelated runtime and data
         run: |
           mkdir -p build/reports/village-release
@@ -122,15 +149,17 @@ jobs:
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Actual structures and topology with vanilla control
+        id: structure_run
         run: bash scripts/technical_structure_audit.sh '${{ matrix.seed }}'
       - name: Preserve structure evidence and warnings
         id: evidence
         if: always()
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
-          build/reports/technical '*.json' '*.log' '*.properties'
+          STRUCTURE_REPORT_DIR: ${{ steps.structure_run.outputs.report_dir }}
+        run: |
+          test -n "$STRUCTURE_REPORT_DIR"
+          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$STRUCTURE_REPORT_DIR" '*.json' '*.log' '*.properties'
   publish:
     needs: [build, worlds, structures]
     if: github.ref == 'refs/heads/main'
