@@ -20,16 +20,23 @@ jobs:
           REPO: ${{ github.repository }}
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, re, subprocess, urllib.request
+          import base64, gzip, hashlib, json, os, re, subprocess, urllib.request, urllib.parse
           from pathlib import Path
           REPO=os.environ['REPO']; RUN=43328807182
           SHA='d952a8328b659cf00902b7c23b334bc4f404e3c3'
           root=Path('diagnosis'); root.mkdir()
           subprocess.run(['git','archive','--format=tar.gz','--output=diagnosis/source.tar.gz','HEAD'],check=True)
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  result=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if result and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+                      result.remove_header('Authorization')
+                  return result
+          opener=urllib.request.build_opener(SafeRedirect())
           def get(path, binary=False):
               request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
                   headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
-              with urllib.request.urlopen(request,timeout=90) as response: data=response.read(80000000)
+              with opener.open(request,timeout=90) as response: data=response.read(80000000)
               return data if binary else json.loads(data)
           jobs=get('/actions/runs/'+str(RUN)+'/jobs?per_page=100')['jobs']
           index=[]
@@ -56,6 +63,7 @@ jobs:
               index.append({'job':job['name'],'id':job['id'],'blob':item['blob'],'files':list(bundle['files'])})
           (root/'index.json').write_text(json.dumps(index,indent=2))
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: hydrology-diagnosis-d952a83
           path: diagnosis/
