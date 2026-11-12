@@ -5,27 +5,43 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Aquifer;
 
+import java.util.Objects;
+import java.util.function.IntBinaryOperator;
+
 /** Surface sources enter the native noise fill before materials, carvers and features. */
 public final class HydrologyAquifer implements Aquifer {
     private final Aquifer nativeAquifer;
-    private final DrainageDensity.Sampler drainage;
-    private int lastX = Integer.MIN_VALUE, lastZ = Integer.MIN_VALUE;
+    private final IntBinaryOperator water;
+    private final int seaLevel;
+    private int lastX, lastZ;
+    private boolean hasColumn;
     private int column;
     private boolean surfaceWater;
+    // Like the native aquifer, this instance is confined to its NoiseChunk task.
+    // Keep protection lookups separate: carving and fluid fill may be interleaved.
+    private int sealX, sealZ;
+    private boolean hasSeal;
+    private final int[] sealProfiles = new int[5];
 
     public HydrologyAquifer(Aquifer nativeAquifer, DrainageDensity.Sampler drainage) {
-        this.nativeAquifer = nativeAquifer;
-        this.drainage = drainage;
+        this(nativeAquifer, drainage::waterAt, drainage.seaLevel());
+    }
+
+    HydrologyAquifer(Aquifer nativeAquifer, IntBinaryOperator water, int seaLevel) {
+        this.nativeAquifer = Objects.requireNonNull(nativeAquifer);
+        this.water = Objects.requireNonNull(water);
+        this.seaLevel = seaLevel;
     }
 
     @Override
     public BlockState computeSubstance(int x, int y, int z, double density) {
         surfaceWater = false;
-        if (density <= 0 && y >= drainage.seaLevel() - 18) {
-            if (x != lastX || z != lastZ) {
-                column = drainage.waterAt(x, z);
+        if (density <= 0 && y >= seaLevel - 18) {
+            if (!hasColumn || x != lastX || z != lastZ) {
+                column = water.applyAsInt(x, z);
                 lastX = x;
                 lastZ = z;
+                hasColumn = true;
             }
             if (column != DrainageModel.DRY && y <= DrainageModel.waterTop(column) && y > DrainageModel.floor(column)) {
                 surfaceWater = true;
@@ -41,12 +57,24 @@ public final class HydrologyAquifer implements Aquifer {
     }
 
     public boolean protects(int x, int y, int z) {
-        if (y < drainage.seaLevel() - 23) return false;
-        return withinSeal(drainage.waterAt(x, z), y)
-                || withinSeal(drainage.waterAt(x - 1, z), y)
-                || withinSeal(drainage.waterAt(x + 1, z), y)
-                || withinSeal(drainage.waterAt(x, z - 1), y)
-                || withinSeal(drainage.waterAt(x, z + 1), y);
+        if (y < seaLevel - 23) return false;
+        if (!hasSeal || x != sealX || z != sealZ) {
+            // A vertical carving scan reuses these five immutable X/Z profiles.
+            // Do not coalesce their intervals: separated levels must retain gaps.
+            hasSeal = false;
+            sealProfiles[0] = water.applyAsInt(x, z);
+            sealProfiles[1] = water.applyAsInt(x - 1, z);
+            sealProfiles[2] = water.applyAsInt(x + 1, z);
+            sealProfiles[3] = water.applyAsInt(x, z - 1);
+            sealProfiles[4] = water.applyAsInt(x, z + 1);
+            sealX = x;
+            sealZ = z;
+            hasSeal = true;
+        }
+        for (int profile : sealProfiles) {
+            if (withinSeal(profile, y)) return true;
+        }
+        return false;
     }
 
     private static boolean withinSeal(int profile, int y) {

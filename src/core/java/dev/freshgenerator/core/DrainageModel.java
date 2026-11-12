@@ -165,6 +165,15 @@ public final class DrainageModel {
         int saved = memo.get(slot);
         if (saved != 0) return saved;
 
+        // Natural upstream flow is a lower bound on flow including lake spillways.
+        // Once that bound reaches MAX_FLOW no basin search can change the result.
+        // The same scratch queue is safe here: the raw traversal does not recurse
+        // into basins, and the queue is reset before the full traversal below.
+        if (includeSpills && flow(start, pending, false) == MAX_FLOW) {
+            memo.compareAndSet(slot, 0, MAX_FLOW);
+            return MAX_FLOW;
+        }
+
         pending[0] = start;
         int count = 1;
         int total = 0;
@@ -395,27 +404,46 @@ public final class DrainageModel {
     private static final class Tiles<T> {
         private record Entry<T>(long key, T value) { }
 
+        private static final int WAYS = 4;
         private final AtomicReferenceArray<Entry<T>> slots;
+        private final int[] nextVictim;
         private final Object[] locks = new Object[32];
         private final TileFactory<T> factory;
 
         Tiles(int size, TileFactory<T> factory) {
+            if (size < WAYS || (size & (size - 1)) != 0) {
+                throw new IllegalArgumentException("Cache capacity must be a power of two >= " + WAYS);
+            }
             slots = new AtomicReferenceArray<>(size);
+            nextVictim = new int[size / WAYS];
             Arrays.setAll(locks, i -> new Object());
             this.factory = factory;
         }
 
+        private T find(long key, int first) {
+            for (int way = 0; way < WAYS; way++) {
+                Entry<T> entry = slots.get(first + way);
+                if (entry != null && entry.key == key) return entry.value;
+            }
+            return null;
+        }
+
         T get(int x, int z) {
             long key = key(x, z);
-            int slot = (int) mix(key) & (slots.length() - 1);
-            Entry<T> current = slots.get(slot);
-            if (current != null && current.key == key) return current.value;
-            // Locks are acquired only in raster -> basin -> grid order.
-            synchronized (locks[slot & (locks.length - 1)]) {
-                current = slots.get(slot);
-                if (current != null && current.key == key) return current.value;
+            int set = (int) mix(key) & (nextVictim.length - 1);
+            int first = set * WAYS;
+            T current = find(key, first);
+            if (current != null) return current;
+            // Four ways prevent nearby colliding tiles repeatedly evicting one
+            // another. Total entry capacity and raster -> basin -> grid lock order
+            // are unchanged. Eviction affects cost, never the calculated geometry.
+            synchronized (locks[set & (locks.length - 1)]) {
+                current = find(key, first);
+                if (current != null) return current;
                 T value = factory.build(x, z);
-                slots.set(slot, new Entry<>(key, value));
+                int victim = nextVictim[set];
+                slots.set(first + victim, new Entry<>(key, value));
+                nextVictim[set] = (victim + 1) & (WAYS - 1);
                 return value;
             }
         }

@@ -18,6 +18,7 @@ from village_checks import compare as compare_villages, require
 SOURCE_JAR = JAR.replace('.jar', '-sources.jar')
 SEEDS = (42, 1337, -20261111, 2037157180504249802, 801086821803359396)
 BUILD_REPORT = Path('reports/village-release')
+CORE_REPORT = 'hydrology-core-observations.json'
 
 
 def build():
@@ -28,17 +29,22 @@ def build():
     require(suites and all(int(s.get(k, 0)) == 0 for s in suites for k in ('failures', 'errors', 'skipped')),
             'Missing, failed or skipped Java tests')
     count = sum(int(s.get('tests', 0)) for s in suites)
-    require(count >= 246, 'Insufficient Java coverage')
+    require(count >= 250, 'Insufficient Java coverage, including the four aquifer cache regressions')
     metrics = [read(Path('build/reports') / name) for name in METRICS]
     require(all(m[k] == 0 for m in metrics for k in ('failures', 'errors', 'skipped')),
             'Failed or skipped Python checks')
     python_tests = sum(m['tests'] for m in metrics)
     require(python_tests >= 128, 'Insufficient Python coverage')
+    # Run on both branch and main publication paths. These synthetic tests add
+    # evidence; they do not replace any real-world, village, or structure gate.
+    subprocess.run([sys.executable, 'scripts/test_hydrology_core.py'], check=True)
+    core_report = Path('build') / BUILD_REPORT / CORE_REPORT
     file = Path('build') / BUILD_REPORT / 'reproducible.sha256'
     hashes = {line.split()[1]: line.split()[0] for line in file.read_text().splitlines()}
     require(all(hashes[str(f)] == checksum(f) for f in (jar, sources)), 'Nonreproducible game or source JAR')
     data = {'source_commit': source, 'version': VERSION, 'java_tests': count, 'python_tests': python_tests,
             'jar_sha256': checksum(jar), 'sources_sha256': checksum(sources), 'reference_sha256': checksum(REFERENCE),
+            'core_geometry_report_sha256': checksum(core_report),
             'reproducible_build': True, **package}
     save(Path('build') / BUILD_REPORT / 'build.json', data)
     print('FRESHGENERATOR_HYDROLOGY_BUILD_PASS', json.dumps(data))
@@ -81,6 +87,8 @@ def publish():
     compiled = root / 'technical-build'
     build_data = read(compiled / BUILD_REPORT / 'build.json')
     require(build_data['source_commit'] == source and build_data['version'] == VERSION, 'Stale build data')
+    require(checksum(compiled / BUILD_REPORT / CORE_REPORT) == build_data['core_geometry_report_sha256'],
+            'Missing or mismatched core geometry evidence')
     jar, sources = (compiled / 'libs' / name for name in (JAR, SOURCE_JAR))
     require(checksum(jar) == build_data['jar_sha256'] and checksum(sources) == build_data['sources_sha256'],
             'Mismatched release hashes')
