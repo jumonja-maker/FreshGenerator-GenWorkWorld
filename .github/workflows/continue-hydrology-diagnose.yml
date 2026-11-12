@@ -1,0 +1,26 @@
+name: Recover hydrology regression evidence
+on:
+  push:
+    branches: [review/hydrology-evidence]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Recover exact failed-run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 scripts/recover_hydrology_evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-hydrology-evidence
+          path: recovered-evidence/
+          if-no-files-found: error
+          retention-days: 3
