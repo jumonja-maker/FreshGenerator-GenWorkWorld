@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Same observer, three independent controls, candidate and saved-world reload.
+# Same current-climate observer, three controls, candidate and saved-world reload.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/test_technical_observer.py
 seed=${1:-42};scope=${2:-fresh}
 [[ "$seed" =~ ^-?[0-9]+$ ]];[[ "$scope" = fresh || "$scope" = normal ]]
 root=$PWD;reference=8bb647170ed20390fc8ae3b9e05017fbd921aa61
@@ -17,13 +18,16 @@ for mode in reference candidate;do
  python3 - "$root" "$tree" <<'PY'
 import hashlib,json,pathlib,sys
 root,tree=map(pathlib.Path,sys.argv[1:])
+sys.path.insert(0,str(root/'scripts'))
+from technical_observer import current_climate_observer
 path='src/audit/java/dev/freshgenerator/audit/BiomeRegionWorldAudit.java'
-s=(root/path).read_text()
+s=current_climate_observer((root/path).read_text())
 needle='Files.writeString(Path.of("biome-region-audit.json"),G.toJson(out)+"\\n");'
 assert s.count(needle)==1
 s=s.replace(needle,'out.add("forest_telemetry",G.toJsonTree(dev.freshgenerator.forest.ForestTelemetry.snapshot()));\n'
  '  out.add("cave_telemetry",G.toJsonTree(dev.freshgenerator.cave.CaveTelemetry.snapshot()));\n'
  '  out.add("forest_height_oracle",G.toJsonTree(dev.freshgenerator.audit.ForestHeightOracle.snapshot()));\n'
+ '  out.addProperty("technical_climate_observer","current-on-both-versions");\n'
  '  out.addProperty("observer_sha256",System.getenv("FG_TECH_OBSERVER"));\n  '+needle)
 needle='Map<Object,byte[]> encodings=new IdentityHashMap<>();'
 assert s.count(needle)==1
@@ -85,6 +89,10 @@ PROPS
   grep 'FRESHGENERATOR_BIOME_REGION_WORLD_PASS' "$log"
   if grep -q 'Forest height oracle:' "$log";then tail -n 120 "$log";exit 1;fi
   cp "$run/biome-region-audit.json" "$report/$label.json"
+  python3 - "$report/$label.json" <<'PY'
+import json,sys
+assert json.load(open(sys.argv[1]))['technical_climate_observer']=='current-on-both-versions'
+PY
  done
  git -C "$tree" diff --exit-code -- src/main src/core src/tool
 done
