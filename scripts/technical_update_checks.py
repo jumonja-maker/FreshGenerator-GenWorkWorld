@@ -48,7 +48,6 @@ def compare(a, b, c, source_commit, scope, seed):
     for report in (a, b, c):
         require(report['stored_biome_checks'] == columns, 'Stored biome check count mismatch')
         require(report['explicit_full_chunks'] > 0, 'No FULL chunks')
-    # Telemetry is observational, enabled identically in both fresh runs.
     for name in ('forest_telemetry', 'cave_telemetry'):
         require(a[name] == b[name], 'Runtime decisions/counts changed: ' + name)
         require(all(type(v) is int and v >= 0 for v in b[name].values()), 'Bad telemetry')
@@ -72,7 +71,24 @@ def compare_folder(folder, source_commit, scope, seed):
     reports = [json.loads((folder / (label + '.json')).read_text()) for label in ('reference', 'candidate', 'candidate-reload')]
     for label in ('reference', 'candidate', 'candidate-reload'):
         require('FRESHGENERATOR_BIOME_REGION_WORLD_PASS' in (folder / (label + '.log')).read_text(), 'Missing actual server completion')
+    from technical_update_diagnostics import full_differences
+    repeat = json.loads((folder / 'reference-repeat.json').read_text())
+    require('FRESHGENERATOR_BIOME_REGION_WORLD_PASS' in (folder / 'reference-repeat.log').read_text(), 'Missing reference repeat completion')
+    diagnostics = {
+        'reference_vs_candidate': full_differences(reports[0], reports[1]),
+        'candidate_vs_reload': full_differences(reports[1], reports[2]),
+        'reference_vs_reference_repeat': full_differences(reports[0], repeat),
+        'telemetry': {label: {key: r[key] for key in ('forest_telemetry','cave_telemetry')} for label,r in zip(('reference','candidate','candidate-reload','reference-repeat'),(*reports,repeat))}}
+    (folder / 'diagnostics.json').write_text(json.dumps(diagnostics,indent=2)+'\n')
+    print('TECH_DIFFERENCE_DETAILS '+json.dumps(diagnostics))
+    require(repeat['source_commit']==BASE_COMMIT and repeat['seed']==seed and repeat['settings']==reports[0]['settings']
+            and repeat['mode']=='reference' and repeat['pass']=='reference-repeat' and repeat['completed'] is True, 'Invalid repeated reference')
+    require(repeat['observer_sha256']==reports[0]['observer_sha256'], 'Repeated reference observer differs')
+    require(repeat['maps']==reports[0]['maps'], 'Reference maps are not repeatable')
+    require(repeat['full_windows']==reports[0]['full_windows'], 'Reference FULL sample is not repeatable')
     result = compare(*reports, source_commit, scope, seed)
+    result['actual_server_runs'] = 4
+    result['reference_repeat_equal'] = True
     result['input_sha256'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.glob('*.json') if p.name != 'comparison.json'}
     (folder / 'comparison.json').write_text(json.dumps(result, indent=2) + '\n')
     return result

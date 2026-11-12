@@ -25,6 +25,16 @@ assert s.count(needle)==1
 s=s.replace(needle,'out.add("forest_telemetry",G.toJsonTree(dev.freshgenerator.forest.ForestTelemetry.snapshot()));\n'
  '  out.add("cave_telemetry",G.toJsonTree(dev.freshgenerator.cave.CaveTelemetry.snapshot()));\n'
  '  out.addProperty("observer_sha256",System.getenv("FG_TECH_OBSERVER"));\n  '+needle)
+# Capture exact block samples for diagnosing failures, not relaxing equality.
+needle='Map<Object,byte[]> encodings=new IdentityHashMap<>();'
+assert s.count(needle)==1
+s=s.replace(needle,needle+'java.util.List<String> palette=new java.util.ArrayList<>();java.util.Map<String,Integer> stateIds=new java.util.HashMap<>();int[] observedStates=new int[256*384];int observation=0;')
+needle='blocks.update(encodings.computeIfAbsent(b,k->(k.toString()+"\\n").getBytes(StandardCharsets.UTF_8)));'
+assert s.count(needle)==1
+s=s.replace(needle,needle+'String description=b.toString();observedStates[observation++]=stateIds.computeIfAbsent(description,k->{palette.add(k);return palette.size()-1;});')
+needle='out.add("biomes",G.toJsonTree(types));'
+assert s.count(needle)==1
+s=s.replace(needle,needle+'out.add("block_palette",G.toJsonTree(palette));out.add("sampled_states",G.toJsonTree(observedStates));')
 (tree/path).write_text(s)
 (tree/'observer.sha256').write_text(hashlib.sha256(s.encode()).hexdigest())
 p=tree/'src/audit/resources/fabric.mod.json';j=json.loads(p.read_text());j['entrypoints']['main']=['dev.freshgenerator.audit.BiomeRegionWorldAudit'];p.write_text(json.dumps(j,indent=2)+'\n')
@@ -44,9 +54,18 @@ simulation-distance=2
 max-tick-time=600000
 spawn-protection=0
 PROPS
- passes=1;[ "$mode" = candidate ]&&passes=2
+ passes=2
  for ((i=1;i<=passes;i++));do
-  label=$mode;[ "$i" = 2 ]&&label=candidate-reload
+  label=$mode
+  if [ "$i" = 2 ];then
+   label=candidate-reload
+   if [ "$mode" = reference ];then
+    label=reference-repeat
+    repeated="$tree/technical-reference-repeat";mkdir -p "$repeated"
+    cp "$run/server.properties" "$run/eula.txt" "$repeated/"
+    run=$repeated
+   fi
+  fi
   log="$report/$label.log"
   if ! (cd "$tree";FRESHGENERATOR_AUDIT=true FG_AUDIT_RUN_DIR="$run" FG_REGION_AUDIT=true FG_REGION_MODE="$mode" FG_REGION_PASS="$label" FG_REGION_SCOPE="$scope" FG_REGION_SOURCE="$source" FG_REGION_COORDINATES="$report/coordinates.json" FG_TECH_OBSERVER="$(cat observer.sha256)" \
    timeout --signal=QUIT --kill-after=15s 1200s gradle --no-daemon --console=plain runServer > "$log" 2>&1);then

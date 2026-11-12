@@ -3,15 +3,17 @@ on:
   push:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: core-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      build_blob: ${{ steps.evidence.outputs.build_blob }}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -26,6 +28,7 @@ jobs:
           python3 scripts/test_cave_audit_metrics.py
           python3 scripts/test_cave_full_stage_checks.py
           python3 scripts/test_technical_update_checks.py
+          python3 scripts/test_ci_evidence.py
       - name: Verify repeatable package and unchanged generation data
         run: |
           mkdir -p build/reports/technical-update
@@ -33,29 +36,32 @@ jobs:
           gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
           sha256sum --check build/reports/technical-update/reproducible.sha256
           python3 scripts/validate_technical_release.py build
-      - name: Keep package, tests and failures
+      - name: Keep package and test evidence in the repository Git database
+        id: evidence
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: technical-build
-          retention-days: 14
-          path: |
-            build/libs/*.jar
-            build/reports/technical-update/
-            build/test-results/test/
-            build/reports/*tests.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put build_blob build
+          'libs/*.jar' 'reports/technical-update/*'
+          'test-results/test/*.xml' 'reports/*tests.json'
   worlds:
-    if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      world_fresh_42: ${{ steps.evidence.outputs.world_fresh_42 }}
+      world_fresh_1337: ${{ steps.evidence.outputs.world_fresh_1337 }}
+      world_fresh_negative: ${{ steps.evidence.outputs.world_fresh_negative }}
+      world_normal_42: ${{ steps.evidence.outputs.world_normal_42 }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {seed: '42', scope: fresh}
-          - {seed: '1337', scope: fresh}
-          - {seed: '-20261111', scope: fresh}
-          - {seed: '42', scope: normal}
+          - {seed: '42', scope: fresh, evidence_key: world_fresh_42}
+          - {seed: '1337', scope: fresh, evidence_key: world_fresh_1337}
+          - {seed: '-20261111', scope: fresh, evidence_key: world_fresh_negative}
+          - {seed: '42', scope: normal, evidence_key: world_normal_42}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -65,21 +71,30 @@ jobs:
         with: {gradle-version: '9.8.2', cache-disabled: true}
       - name: Exact reference, candidate and saved-world comparison
         run: bash scripts/technical_update_audit.sh '${{ matrix.seed }}' '${{ matrix.scope }}'
-      - name: Keep every observation including failures
+      - name: Keep observations without Actions artifact storage
+        id: evidence
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: technical-world-${{ matrix.scope }}-${{ matrix.seed }}
-          retention-days: 14
-          path: build/reports/technical-update/${{ matrix.scope }}-${{ matrix.seed }}/
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
+          'build/reports/technical-update/${{ matrix.scope }}-${{ matrix.seed }}'
+          '*.json' '*.log'
   structures:
-    if: "!contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      structures_42: ${{ steps.evidence.outputs.structures_42 }}
+      structures_1337: ${{ steps.evidence.outputs.structures_1337 }}
+      structures_negative: ${{ steps.evidence.outputs.structures_negative }}
     strategy:
       fail-fast: false
       matrix:
-        seed: ['42', '1337', '-20261111']
+        include:
+          - {seed: '42', evidence_key: structures_42}
+          - {seed: '1337', evidence_key: structures_1337}
+          - {seed: '-20261111', evidence_key: structures_negative}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -89,13 +104,14 @@ jobs:
         with: {gradle-version: '9.8.2', cache-disabled: true}
       - name: Actual structures and supported terrain with vanilla control
         run: bash scripts/technical_structure_audit.sh '${{ matrix.seed }}'
-      - name: Keep warnings, geometry and structure logs
+      - name: Keep warnings and structure evidence without artifact quota
+        id: evidence
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: technical-structures-${{ matrix.seed }}
-          retention-days: 14
-          path: build/reports/technical/
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
+          build/reports/technical '*.json' '*.log' '*.properties'
   publish:
     needs: [build, worlds, structures]
     if: github.ref == 'refs/heads/main'
@@ -106,10 +122,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: technical-*
-          path: ci-evidence
+      - name: Restore exact evidence from this run and commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVIDENCE_JOBS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci_evidence.py get ci-evidence
       - name: Recheck raw evidence and publish only a complete passing release
         run: python3 scripts/validate_technical_release.py publish
       - name: Commit verified binary and report without overwriting newer main
