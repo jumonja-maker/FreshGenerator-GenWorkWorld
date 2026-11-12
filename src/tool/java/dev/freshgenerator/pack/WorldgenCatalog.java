@@ -9,6 +9,12 @@ public final class WorldgenCatalog {
  public static final String NORMAL_TAG="data/minecraft/tags/worldgen/world_preset/normal.json";
  private WorldgenCatalog() { }
  public static Map<String,JsonElement> compile(VanillaAssets vanilla)throws IOException {
+  Map<String,JsonElement> out=new TreeMap<>(compileBeforeBiomeRegions(vanilla));
+  BiomeRegionCompiler.apply(out);
+  return Collections.unmodifiableMap(out);
+ }
+ /** Frozen 0.3.1 compiler stage for historical layer regression tests. Not a world preset. */
+ public static Map<String,JsonElement> compileBeforeBiomeRegions(VanillaAssets vanilla)throws IOException {
   Objects.requireNonNull(vanilla);Map<String,JsonElement> out=new TreeMap<>();
   out.putAll(new WorldgenCompiler(vanilla,"balanced_v1",TerrainProfile.BALANCED).compile());
   out.putAll(new WorldgenCompiler(vanilla,"highlands_v1",TerrainProfile.HIGHLANDS).compile());

@@ -7,10 +7,10 @@ import java.util.zip.ZipFile;
 import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 class EcotoneCompilerTest {
- static Map<String,JsonElement> pack()throws Exception{return WorldgenCatalog.compile(new VanillaAssets());}
+ // Historical layer contract; BiomeRegionCompilerTest checks the complete current output.
+ static Map<String,JsonElement> pack()throws Exception{return WorldgenCatalog.compileBeforeBiomeRegions(new VanillaAssets());}
  static JsonElement read(ZipFile z,String n)throws Exception{return JsonParser.parseString(new String(z.getInputStream(z.getEntry(n)).readAllBytes(),StandardCharsets.UTF_8));}
  @Test void onlyThreeExistingResourcesChangeComparedToPublishedTerrainFix()throws Exception{
-  // The three ecotone resources plus the explicitly audited cave-weight correction.
   var p=pack();Set<String> changed=new TreeSet<>();int checked=0;
   try(var z=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.2.3-alpha.1.jar")){
    for(var e:Collections.list(z.entries()))if(e.getName().startsWith("data/")&&e.getName().endsWith(".json")){

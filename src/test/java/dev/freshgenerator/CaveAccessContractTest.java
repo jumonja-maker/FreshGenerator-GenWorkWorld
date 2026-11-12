@@ -11,7 +11,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class CaveAccessContractTest {
  static JsonElement read(ZipFile z,String n)throws Exception{return JsonParser.parseString(new String(z.getInputStream(z.getEntry(n)).readAllBytes(),StandardCharsets.UTF_8));}
  @Test void exactlyTwoExistingResourcesChangeAndEverythingElseIsPreserved()throws Exception{
-  var p=WorldgenCatalog.compile(new VanillaAssets());Set<String> changed=new TreeSet<>();int unchanged=0;
+  // Historical cave layer. The complete current catalog is independently compared to 0.3.1 by BiomeRegionCompilerTest.
+  var p=WorldgenCatalog.compileBeforeBiomeRegions(new VanillaAssets());Set<String> changed=new TreeSet<>();int unchanged=0;
   try(var z=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.3.0-alpha.1.jar")){
    for(var e:Collections.list(z.entries()))if(e.getName().startsWith("data/")&&e.getName().endsWith(".json")){
     assertNotNull(p.get(e.getName()),e.getName());var now=JsonParser.parseString(ResourceJson.encode(p.get(e.getName())));

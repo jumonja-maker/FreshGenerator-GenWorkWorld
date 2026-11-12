@@ -20,33 +20,34 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Compile native cave API and test exact stage comparisons
+      - name: Compile real game and check compiler layers and map metrics
         id: compile
         run: |
           gradle --no-daemon --console=plain clean build
+          python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
           python3 scripts/test_cave_full_stage_checks.py
-      - name: Repeated reference, candidate and reload on seed 42
+      - name: Native paired biome maps and FULL regions seed 42
         id: seed42
         continue-on-error: true
-        run: bash scripts/cave_world_audit.sh 42 fresh
-      - name: Repeated reference, candidate and reload on seed 1337
+        run: bash scripts/biome_region_audit.sh 42 fresh
+      - name: Native paired biome maps and FULL regions seed 1337
         id: seed1337
         continue-on-error: true
-        run: bash scripts/cave_world_audit.sh 1337 fresh
-      - name: Repeated reference, candidate and reload on seed -20261111
+        run: bash scripts/biome_region_audit.sh 1337 fresh
+      - name: Native paired biome maps and FULL regions negative seed
         id: seednegative
         continue-on-error: true
-        run: bash scripts/cave_world_audit.sh -20261111 fresh
-      - name: Ordinary Minecraft scope and save reload
+        run: bash scripts/biome_region_audit.sh -20261111 fresh
+      - name: Ordinary Minecraft isolation and save reload
         id: normal
         continue-on-error: true
-        run: bash scripts/cave_world_audit.sh 42 normal
+        run: bash scripts/biome_region_audit.sh 42 normal
       - name: Structures and connected terrain with vanilla controls
         id: structures
         continue-on-error: true
         run: bash scripts/terrain_fix_audit.sh
-      - name: Preserve observed stage and surface counts
+      - name: Preserve failures and measured map statistics
         if: always()
         run: |
           python3 - <<'PY'
@@ -54,12 +55,12 @@ jobs:
           for p in pathlib.Path('build/test-results/test').glob('TEST-*.xml'):
             for c in E.parse(p).getroot().findall('testcase'):
               for f in c.findall('failure')+c.findall('error'): print(p.name,c.get('name'),f.get('message'),(f.text or '')[:3000])
-          for p in pathlib.Path('build/reports/caves').rglob('*.json'):
-            if p.name=='coordinates.json': continue
+          for p in pathlib.Path('build/reports/biome-regions').glob('*/comparison.json'):
             r=json.loads(p.read_text())
-            print('CAVE_RUN_EVIDENCE',p,json.dumps({'seed':r.get('seed'),'telemetry':r.get('telemetry'),'regions':[{k:w.get(k) for k in ['label','x','z','dry_opening_columns','opening_columns_before','opening_columns_after','noise_only_opening_columns','deep_air_samples','submerged_envelope_columns']} for w in r.get('regions',[])]}))
+            for m in r['maps']:
+              print('BIOME_EVIDENCE',r['seed'],m['name'],json.dumps({phase:{k:m[phase][k] for k in ['exact_id_crossings','common_id_boundary_fraction','common_family_boundary_fraction','common_small_components_le4_cells','common_component_area_median_blocks2']} for phase in ['before','after']}))
           PY
-      - name: Require every audit outcome and validate installable release
+      - name: Require every completed scenario and validate installable binary
         env:
           AUDIT_OUTCOMES: ${{ toJSON(steps) }}
         run: |
@@ -67,14 +68,14 @@ jobs:
           import json,os
           steps=json.loads(os.environ['AUDIT_OUTCOMES'])
           for name in ['compile','seed42','seed1337','seednegative','normal','structures']:
-            assert steps[name]['outcome']=='success', ('Audit failed; publication forbidden',name,steps[name])
+            assert steps[name]['outcome']=='success', ('Publication blocked by audit',name,steps[name])
           PY
-          python3 scripts/validate_cave_release.py
-      - name: Publish checked binary and paired evidence
+          python3 scripts/validate_biome_region_release.py
+      - name: Publish measured regional biome update
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
-          git commit -m 'build: publish tested surface cave access correction [skip ci]'
+          git commit -m 'build: publish verified regional biome scale and evidence [skip ci]'
           git push origin "HEAD:$GITHUB_REF_NAME"

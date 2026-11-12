@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class ForestContractTest {
  @Test void forestAndClimateResourcesAreUnchangedExceptTheAuditedCaveLayer()throws Exception {
   new CaveAccessContractTest().exactlyTwoExistingResourcesChangeAndEverythingElseIsPreserved();
-  var p=WorldgenCatalog.compile(new VanillaAssets());int n=0;
+  // Freeze the historical forest/cave stage; full catalog has its own strict regional contract.
+  var p=WorldgenCatalog.compileBeforeBiomeRegions(new VanillaAssets());int n=0;
   try(var z=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.2.4-alpha.1.jar")) {
    for(var e:Collections.list(z.entries())) {
     if(!e.getName().startsWith("data/")||!e.getName().endsWith(".json"))continue;
