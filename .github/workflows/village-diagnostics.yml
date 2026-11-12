@@ -1,0 +1,14 @@
+name: Inspect preserved village evidence
+on:
+  workflow_dispatch:
+  push:
+    paths: ['scripts/inspect_village_evidence.py']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/inspect_village_evidence.py
