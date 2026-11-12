@@ -15,6 +15,8 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      build_blob: ${{ steps.evidence.outputs.build_blob }}
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -28,7 +30,7 @@ jobs:
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Compile and run regression tests
         run: |
-          gradle --no-daemon --console=plain clean build
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar
           python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
@@ -46,11 +48,12 @@ jobs:
           sha256sum --check build/reports/village-release/reproducible.sha256
           python3 scripts/validate_hydrology_release.py build
       - name: Preserve the verified candidate package
+        id: evidence
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/ci_evidence.py put build_blob build
-          'libs/*.jar' 'reports/village-release/*' 'test-results/test/*.xml'
+          'libs/*.jar' 'hydrology-audit/hydrology-audit.jar' 'reports/village-release/*' 'test-results/test/*.xml'
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
@@ -70,7 +73,7 @@ jobs:
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Compile actual APIs and run contract tests
         run: |
-          gradle --no-daemon --console=plain clean build
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar
           python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
           python3 scripts/test_cave_full_stage_checks.py
@@ -93,7 +96,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/ci_evidence.py put build_blob build
-          'libs/*.jar' 'reports/village-release/*'
+          'libs/*.jar' 'hydrology-audit/hydrology-audit.jar' 'reports/village-release/*'
           'test-results/test/*.xml' 'reports/*tests.json'
   worlds:
     if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
@@ -179,7 +182,11 @@ jobs:
           python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$STRUCTURE_REPORT_DIR" '*.json' '*.log' '*.properties'
   hydrology:
     name: Native hydrology (${{ matrix.seed }})
-    if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    needs: [build, check_patch]
+    if: >-
+      always() && !cancelled() &&
+      ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
+       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
@@ -202,16 +209,16 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/setup-java@v5
         with: {distribution: temurin, java-version: '25'}
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Canonical dependency fallback
-        run: |
-          mkdir -p "$GRADLE_USER_HOME/init.d"
-          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+      - name: Restore the tested package and observer for this run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BUILD_BLOB: ${{ needs.build.outputs.build_blob || needs.check_patch.outputs.build_blob }}
+        run: python3 scripts/ci_evidence.py get-one build_blob "$BUILD_BLOB" build
       - name: Generate real worlds and measure water blocks
         id: native
         env:
           SEED: ${{ matrix.seed }}
+          FG_HYDROLOGY_SKIP_BUILD: 'true'
         run: |
           if [ "$SEED" = 42 ]; then
             export FG_HYDROLOGY_RUNS='candidate baseline reverse parallel reload normal-baseline normal-candidate distant-horizons'

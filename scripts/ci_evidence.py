@@ -140,6 +140,15 @@ def put(key,root,patterns):
  with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write(key+'='+result['sha']+'\n')
  print('CI_EVIDENCE_STORED '+json.dumps({'name':bundles[key],'blob':result['sha'],'bytes':len(data)}))
 
+def restore_blob(key, sha, destination, identity, bundles):
+ require(key in bundles,'Unknown evidence key')
+ require(re.fullmatch(r'[0-9a-f]{40}',sha),'Invalid evidence blob SHA')
+ result=request('/'+sha)
+ require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
+ data=base64.b64decode(result['content'])
+ require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
+ return unpack(data,bundles[key],identity,destination)
+
 def get_all(needs,destination):
  outputs={}
  jobs = ('build','worlds','structures')
@@ -157,9 +166,7 @@ def get_all(needs,destination):
  identity=provenance();index=[]
  with staged_directory(destination) as staged:
   for key,sha in sorted(outputs.items()):
-   result=request('/'+sha);require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
-   data=base64.b64decode(result['content']);require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
-   index.append(unpack(data,bundles[key],identity,staged/bundles[key]))
+   index.append(restore_blob(key,sha,staged/bundles[key],identity,bundles))
   (staged/'index.json').write_text(json.dumps({'identity':identity,'bundles':index},indent=2)+'\n')
  print('CI_EVIDENCE_RESTORED '+json.dumps(index))
 
@@ -167,6 +174,9 @@ if __name__=='__main__':
  parser=argparse.ArgumentParser();sub=parser.add_subparsers(dest='mode',required=True)
  p=sub.add_parser('put');p.add_argument('key',choices=BUNDLES | HYDROLOGY_BUNDLES);p.add_argument('root');p.add_argument('patterns',nargs='+')
  p=sub.add_parser('get');p.add_argument('destination')
+ p=sub.add_parser('get-one');p.add_argument('key',choices=BUNDLES | HYDROLOGY_BUNDLES)
+ p.add_argument('sha');p.add_argument('destination')
  args=parser.parse_args()
  if args.mode=='put':put(args.key,args.root,args.patterns)
- else:get_all(json.loads(os.environ['EVIDENCE_JOBS']),args.destination)
+ elif args.mode=='get':get_all(json.loads(os.environ['EVIDENCE_JOBS']),args.destination)
+ else:restore_blob(args.key,args.sha,args.destination,provenance(),BUNDLES | HYDROLOGY_BUNDLES)
