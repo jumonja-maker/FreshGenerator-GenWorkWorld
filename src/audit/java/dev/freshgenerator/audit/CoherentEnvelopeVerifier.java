@@ -37,9 +37,9 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         List<Peak> candidates=new ArrayList<>();
         for(int x=-8192;x<=8192;x+=384)for(int z=-8192;z<=8192;z+=384){
             float h=state.sampleBlockValueUncached(height,x,0,z);
-            if(h<165)continue;
+            if(h<150)continue;
             float m=state.sampleBlockValueUncached(mountain,x,0,z);
-            if(m>.13)candidates.add(new Peak(x,z,h,m));
+            if(m>.10)candidates.add(new Peak(x,z,h,m));
         }
         candidates.sort(Comparator.comparingDouble((Peak p)->p.height()).reversed());
         List<Peak> peaks=new ArrayList<>();
@@ -49,8 +49,8 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         }
         int cols=0,voxels=0,changed=0,signReversals=0,deep=0,high=0;
         double maxAbs=0,minRelief=Double.POSITIVE_INFINITY,maxRelief=Double.NEGATIVE_INFINITY;
-        for(var p:peaks)for(int[] delta:new int[][]{{0,0},{8,0},{0,8}}){
-            int x=p.x()+delta[0],z=p.z()+delta[1],center=(int)Math.floor(
+        for(var p:peaks)for(int dx=-16;dx<=16;dx+=8)for(int dz=-16;dz<=16;dz+=8){
+            int x=p.x()+dx,z=p.z()+dz,center=(int)Math.floor(
                 state.sampleBlockValueUncached(height,x,0,z));
             boolean seenAir=false;
             for(int y=center-12;y<=center+12;y++){
