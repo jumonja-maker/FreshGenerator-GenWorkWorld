@@ -23,6 +23,7 @@ needle='Files.writeString(Path.of("biome-region-audit.json"),G.toJson(out)+"\\n"
 assert s.count(needle)==1
 s=s.replace(needle,'out.add("forest_telemetry",G.toJsonTree(dev.freshgenerator.forest.ForestTelemetry.snapshot()));\n'
  '  out.add("cave_telemetry",G.toJsonTree(dev.freshgenerator.cave.CaveTelemetry.snapshot()));\n'
+ '  out.add("forest_height_oracle",G.toJsonTree(dev.freshgenerator.audit.ForestHeightOracle.snapshot()));\n'
  '  out.addProperty("observer_sha256",System.getenv("FG_TECH_OBSERVER"));\n  '+needle)
 needle='Map<Object,byte[]> encodings=new IdentityHashMap<>();'
 assert s.count(needle)==1
@@ -34,8 +35,19 @@ needle='out.add("biomes",G.toJsonTree(types));'
 assert s.count(needle)==1
 s=s.replace(needle,needle+'out.add("block_palette",G.toJsonTree(palette));out.add("sampled_states",G.toJsonTree(observedStates));')
 (tree/path).write_text(s)
-(tree/'observer.sha256').write_text(hashlib.sha256(s.encode()).hexdigest())
-p=tree/'src/audit/resources/fabric.mod.json';j=json.loads(p.read_text());j['entrypoints']['main']=['dev.freshgenerator.audit.BiomeRegionWorldAudit'];p.write_text(json.dumps(j,indent=2)+'\n')
+# Identical read-only instrumentation on both versions; production files stay untouched.
+observed={path:s}
+for extra in ['src/audit/java/dev/freshgenerator/audit/ForestHeightOracle.java',
+              'src/audit/java/dev/freshgenerator/audit/mixin/ForestHeightOracleMixin.java']:
+ text=(root/extra).read_text();dest=tree/extra;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(text);observed[extra]=text
+config='freshgenerator-technical-audit.mixins.json'
+text=json.dumps({'required':True,'minVersion':'0.8','package':'dev.freshgenerator.audit.mixin',
+                 'compatibilityLevel':'JAVA_25','mixins':['ForestHeightOracleMixin'],
+                 'injectors':{'defaultRequire':1}},sort_keys=True,indent=2)+'\n'
+(tree/'src/audit/resources'/config).write_text(text);observed[config]=text
+p=tree/'src/audit/resources/fabric.mod.json';j=json.loads(p.read_text());j['entrypoints']['main']=['dev.freshgenerator.audit.BiomeRegionWorldAudit'];j['mixins']=[config];p.write_text(json.dumps(j,indent=2)+'\n')
+observed['audit-entrypoints']=json.dumps({'main':j['entrypoints']['main'],'mixins':j['mixins']},sort_keys=True)
+(tree/'observer.sha256').write_text(hashlib.sha256(json.dumps(observed,sort_keys=True).encode()).hexdigest())
 PY
  run="$tree/technical-run";mkdir -p "$run";printf 'eula=true\n'>"$run/eula.txt"
  preset=freshgenerator:world;[ "$scope" = normal ]&&preset=minecraft:normal
@@ -71,6 +83,7 @@ PROPS
    tail -n 120 "$log";exit 1
   fi
   grep 'FRESHGENERATOR_BIOME_REGION_WORLD_PASS' "$log"
+  if grep -q 'Forest height oracle:' "$log";then tail -n 120 "$log";exit 1;fi
   cp "$run/biome-region-audit.json" "$report/$label.json"
  done
  git -C "$tree" diff --exit-code -- src/main src/core src/tool

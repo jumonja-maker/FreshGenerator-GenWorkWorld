@@ -48,8 +48,6 @@ def validate_full(reference_windows, candidate_windows):
                 dx, dz = divmod(col, 16)
                 examples.append({'x': candidate['x'] + dx * 4, 'y': y - 64, 'z': candidate['z'] + dz * 4,
                                  'reference_states': [a, b, c], 'candidate': actual})
-        # Limit control instability, not the number of permissible unknown candidate states.
-        # Unknown candidate values always fail, including at a variable coordinate.
         require(local_varied <= len(after) // 1000, 'Reference window is too variable for a technical release')
         total += len(after)
         varied += local_varied
@@ -63,15 +61,45 @@ def validate_full(reference_windows, candidate_windows):
             'all_stable_reference_blocks_equal': True, 'windows': observations}
 
 
+FAMILIES = ('TEMPERATE', 'CONIFER', 'TROPICAL')
+FOREST_KEYS = {f + suffix for f in FAMILIES for suffix in ('_attempts', '_kept', '_opening_attempts')}
+ORACLE_KEYS = {'verified_calls', 'hits', 'misses', 'mismatches'}
+
+
 def validate_telemetry(references, candidate):
     require(len(references) == 3, 'Exactly three telemetry controls are required')
     for name in ('forest_telemetry', 'cave_telemetry'):
         require(all(set(r[name]) == set(candidate[name]) for r in references), 'Telemetry schema changed')
         require(all(type(v) is int and v >= 0 for r in [*references, candidate] for v in r[name].values()), 'Invalid telemetry')
     require(all(r['cave_telemetry'] == candidate['cave_telemetry'] for r in references), 'Carving decisions changed')
-    # Require one complete observed forest snapshot, not independent min/max ranges.
-    require(any(r['forest_telemetry'] == candidate['forest_telemetry'] for r in references), 'Forest telemetry was not reproduced by an unchanged reference')
+    oracles = []
+    for report in [*references, candidate]:
+        forest = report['forest_telemetry']
+        require(set(forest) == FOREST_KEYS, 'Incomplete forest telemetry')
+        attempts = 0
+        for family in FAMILIES:
+            n = forest[family + '_attempts']
+            attempts += n
+            require(forest[family + '_kept'] <= n and forest[family + '_opening_attempts'] <= n,
+                    'Impossible forest counter relationships')
+        oracle = report.get('forest_height_oracle')
+        require(isinstance(oracle, dict) and set(oracle) == ORACLE_KEYS, 'Missing native height-cache oracle')
+        require(all(type(v) is int and v >= 0 for v in oracle.values()), 'Invalid height-cache evidence')
+        require(oracle['mismatches'] == 0, 'Actual native cache protocol/value mismatch')
+        require(oracle['verified_calls'] == oracle['hits'] + oracle['misses'], 'Incomplete cache evidence')
+        require(oracle['verified_calls'] >= attempts, 'Not every observed forest attempt exercised the oracle')
+        require(attempts == 0 or oracle['misses'] > 0, 'Native height sampling was not exercised')
+        oracles.append(oracle)
+    # Process-wide decoration counters varied even between unchanged control runs.
+    # Do not invent an equal snapshot or use per-counter tolerance bands. Record them
+    # verbatim; correctness now additionally requires EVERY instrumented native height
+    # call to follow the old map's exact hit/miss, coordinate and float-bit protocol.
+    # Maps, water, same-coordinate block envelopes and reload equality remain hard gates.
     return {'cave_counts_exact_in_all_controls': True,
             'forest_counts_equal_first_reference': references[0]['forest_telemetry'] == candidate['forest_telemetry'],
-            'forest_counts_equal_complete_observed_reference': True,
+            'forest_counts_equal_complete_observed_reference': any(r['forest_telemetry'] == candidate['forest_telemetry'] for r in references),
+            'forest_counts_are_observational_not_a_determinism_claim': True,
+            'native_height_cache_protocol_verified': True,
+            'candidate_height_oracle': oracles[-1],
+            'reference_height_oracles': oracles[:-1],
             'forest_reference_snapshots': [r['forest_telemetry'] for r in references]}

@@ -1,7 +1,7 @@
 """Synthetic rejection tests, NOT claims about actual Minecraft world outcomes."""
 import copy,hashlib,json,unittest
 from pathlib import Path
-from technical_reference_envelope import states,validate_full,validate_telemetry
+from technical_reference_envelope import states,validate_full,validate_telemetry,FAMILIES
 
 
 def window(values=None):
@@ -15,6 +15,14 @@ def window(values=None):
 
 def change(w,index,state):
     result=states(w);result[index]=state;return window(result)
+
+
+def telemetry(attempts=8,kept=6):
+    forest={f+s:0 for f in FAMILIES for s in ('_attempts','_kept','_opening_attempts')}
+    forest.update(TEMPERATE_attempts=attempts,TEMPERATE_kept=kept,TEMPERATE_opening_attempts=1 if attempts else 0)
+    return {'forest_telemetry':forest,'cave_telemetry':{'guard_instances':3},
+            'forest_height_oracle':{'verified_calls':100 if attempts else 0,'hits':70 if attempts else 0,
+                                   'misses':30 if attempts else 0,'mismatches':0}}
 
 
 class ReferenceEnvelopeTest(unittest.TestCase):
@@ -54,17 +62,52 @@ class ReferenceEnvelopeTest(unittest.TestCase):
     def test_large_control_variance_is_not_usable(self):
         values=states(self.w);values[:100]=['Block{minecraft:air}']*100;other=window(values);self.controls[1]=[other]
         with self.assertRaises(ValueError):validate_full(self.controls,[self.w])
-    def test_telemetry_requires_complete_snapshot_not_ranges(self):
-        refs=[{'forest_telemetry':{'a':1,'b':2},'cave_telemetry':{'c':3}},
-              {'forest_telemetry':{'a':2,'b':1},'cave_telemetry':{'c':3}},
-              {'forest_telemetry':{'a':1,'b':2},'cave_telemetry':{'c':3}}]
-        with self.assertRaises(ValueError):validate_telemetry(refs,{'forest_telemetry':{'a':1,'b':1},'cave_telemetry':{'c':3}})
-    def test_carving_difference_is_not_excused(self):
-        a={'forest_telemetry':{'a':1},'cave_telemetry':{'c':3}};b=copy.deepcopy(a);b['cave_telemetry']['c']=4
+    def test_counter_difference_never_passes_without_native_oracle(self):
+        a=telemetry();b=telemetry(9,7);del b['forest_height_oracle']
         with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
-    def test_complete_matching_forest_snapshot(self):
-        a={'forest_telemetry':{'a':1},'cave_telemetry':{'c':3}};b=copy.deepcopy(a);b['forest_telemetry']['a']=2
-        r=validate_telemetry([a,b,a],b);self.assertFalse(r['forest_counts_equal_first_reference'])
+    def test_counter_difference_is_explicit_with_per_call_proof(self):
+        a=telemetry();b=telemetry(9,7);r=validate_telemetry([a,a,a],b)
+        self.assertFalse(r['forest_counts_equal_complete_observed_reference'])
+        self.assertTrue(r['native_height_cache_protocol_verified'])
+        self.assertEqual(b['forest_height_oracle'],r['candidate_height_oracle'])
+    def test_carving_difference_is_not_excused(self):
+        a=telemetry();b=copy.deepcopy(a);b['cave_telemetry']['guard_instances']=4
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_complete_matching_forest_snapshot_is_reported(self):
+        a=telemetry();b=telemetry(9,7);r=validate_telemetry([a,b,a],b)
+        self.assertFalse(r['forest_counts_equal_first_reference']);self.assertTrue(r['forest_counts_equal_complete_observed_reference'])
+    def test_actual_cache_mismatch_fails_even_if_counters_equal(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_height_oracle']['mismatches']=1
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_reference_oracle_failure_is_not_excused(self):
+        a=telemetry();r=copy.deepcopy(a);r['forest_height_oracle']['mismatches']=1
+        with self.assertRaises(ValueError):validate_telemetry([a,r,a],a)
+    def test_uninstrumented_reference_fails(self):
+        a=telemetry();r=copy.deepcopy(a);del r['forest_height_oracle']
+        with self.assertRaises(ValueError):validate_telemetry([a,r,a],a)
+    def test_oracle_arithmetic_must_match_completed_calls(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_height_oracle']['hits']-=1
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_zero_oracle_cannot_cover_nonzero_attempts(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_height_oracle']=telemetry(0,0)['forest_height_oracle']
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_counts_cannot_keep_more_than_attempted(self):
+        a=telemetry();b=telemetry(8,9)
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_negative_counter_fails(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_telemetry']['TEMPERATE_kept']=-1
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_bool_is_not_a_measured_counter(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_height_oracle']['mismatches']=False
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
+    def test_normal_world_may_have_no_forest_calls(self):
+        a=telemetry(0,0);self.assertTrue(validate_telemetry([a,a,a],a)['native_height_cache_protocol_verified'])
+    def test_incomplete_forest_counter_schema_fails(self):
+        a=telemetry();del a['forest_telemetry']['TEMPERATE_kept']
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],a)
+    def test_no_sampling_misses_cannot_validate_a_forest(self):
+        a=telemetry();b=copy.deepcopy(a);b['forest_height_oracle'].update(hits=100,misses=0)
+        with self.assertRaises(ValueError):validate_telemetry([a,a,a],b)
 
 if __name__=='__main__':
  result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ReferenceEnvelopeTest))
