@@ -8,7 +8,8 @@ class VillageEvidenceTests(unittest.TestCase):
   for i,name in enumerate(('village_desert','village_taiga','village_savanna')):
    ident={'id':'minecraft:'+name,'chunkX':i,'chunkZ':0,'sites':[],'pieces':20}
    rows.append(dict(ident,full_sha256='b'*64,path_blocks=0 if i==0 else 100,farmland_blocks=0 if i==1 else 40,
-    path_columns_with_void_within_8=0,farmland_columns_with_void_within_8=0,doors=3,door_exit_warnings=0))
+    path_columns_with_void_within_8=0,farmland_columns_with_void_within_8=0,doors=3,door_exit_warnings=0,protected_path_air_or_lava_columns=0,
+    protected_farm_air_or_lava_columns=0,protected_floor_lava_columns=0))
    terrain.append(dict(ident,terrain_columns=1000,predecorated_columns_not_used=0,protected_roof_columns=100,roof_failure_columns=0,
     open_hole_columns=0,rigid_columns=30,rigid_grade_error_columns=0,deep_sha256='c'*64,outside_sha256='d'*64))
   base={'completed':True,'seed':42,'settings':'freshgenerator:highlands_v2','villages':rows,'terrain':terrain,'explicit_full_chunks':200}
@@ -56,6 +57,22 @@ class VillageEvidenceTests(unittest.TestCase):
   self.fails(f)
  def test_wrong_setting_fails(self):self.fails(lambda r:r[0].update(settings='minecraft:overworld'))
  def test_invalid_counter_fails(self):self.fails(lambda r:r[1]['terrain'][0].update(roof_failure_columns=False))
+ def test_late_lava_under_path_is_not_hidden_by_terrain_success(self):
+  def f(r):
+   for q in r[1:]:q['villages'][2]['protected_floor_lava_columns']=1
+  self.fails(f)
+ def test_late_air_beneath_protected_farm_fails(self):
+  def f(r):
+   for q in r[1:]:q['villages'][2]['protected_farm_air_or_lava_columns']=1
+  self.fails(f)
+ def test_late_air_beneath_protected_path_fails(self):
+  def f(r):
+   for q in r[1:]:q['villages'][2]['protected_path_air_or_lava_columns']=1
+  self.fails(f)
+ def test_natural_water_crossings_are_retained_as_explicit_warnings(self):
+  r=self.fixtures()
+  for q in r:q['villages'][2]['path_columns_with_void_within_8']=5
+  self.assertEqual(5,self.check(r)['full_after'][2]['path_columns_with_void_within_8'])
 if __name__=='__main__':
  result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(VillageEvidenceTests))
  p=pathlib.Path('build/reports/village-check-tests.json');p.parent.mkdir(parents=True,exist_ok=True)

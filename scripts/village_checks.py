@@ -7,7 +7,8 @@ BASE='7c661cecbc42328c4ef099b034393cc36afb8b50'
 COUNTS=('terrain_columns','predecorated_columns_not_used','protected_roof_columns','roof_failure_columns',
         'open_hole_columns','rigid_columns','rigid_grade_error_columns')
 FULL_COUNTS=('path_blocks','path_columns_with_void_within_8','farmland_blocks',
-             'farmland_columns_with_void_within_8','doors','door_exit_warnings')
+             'farmland_columns_with_void_within_8','doors','door_exit_warnings',
+             'protected_path_air_or_lava_columns','protected_farm_air_or_lava_columns','protected_floor_lava_columns')
 def require(ok,message):
  if not ok:raise ValueError(message)
 def identity(r):return {k:r[k] for k in ('id','chunkX','chunkZ','sites','pieces')}
@@ -39,13 +40,13 @@ def validate(a,b,c,sha,seed,minimum_villages=3):
   require(identity(old)==identity(new)==identity(terrain),'Full/terrain structure layout changed')
   counts(old,FULL_COUNTS);counts(new,FULL_COUNTS);fingerprint(old['full_sha256']);fingerprint(new['full_sha256'])
   require(new['doors']==old['doors']>0,'Lost village doors')
-  # Desert roads are not necessarily dirt_path, and some native villages have no farm.
-  # Never excuse losing an object that existed in this exact baseline village.
   require(new['path_blocks']>=old['path_blocks'],'Lost baseline dirt-path blocks')
   require(new['farmland_blocks']>=old['farmland_blocks'],'Lost baseline farmland blocks')
   require(new['path_columns_with_void_within_8']<=old['path_columns_with_void_within_8'],'Path support regressed')
   require(new['farmland_columns_with_void_within_8']<=old['farmland_columns_with_void_within_8'],'Farm support regressed')
   require(new['door_exit_warnings']<=old['door_exit_warnings'],'Door access regressed')
+  for field in ('protected_path_air_or_lava_columns','protected_farm_air_or_lava_columns','protected_floor_lava_columns'):
+   require(new[field]==0,'Late feature breached protected ground: '+field)
  require(sum(r['path_blocks'] for r in a['villages'])>0,'No actual dirt paths in baseline coverage')
  require(sum(r['farmland_blocks'] for r in a['villages'])>0,'No actual farms in baseline coverage')
  return {'source_commit':sha,'reference_commit':BASE,'seed':seed,'actual_server_runs':3,'villages':len(b['villages']),

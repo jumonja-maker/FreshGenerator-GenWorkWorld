@@ -22,7 +22,7 @@ import java.security.MessageDigest;
 import java.util.*;
 
 /** Read-only paired measurements. Identical source on baseline and candidate.
- * All originally selected villages are retained, including native layouts without farms.
+ * Native farm-less layouts remain in the evidence; late air/lava failures are counted separately.
  */
 public final class VillageWorldAudit implements ModInitializer {
     private static final Gson G=new GsonBuilder().setPrettyPrinting().create();
@@ -141,7 +141,8 @@ public final class VillageWorldAudit implements ModInitializer {
     }
     private JsonObject scanFull(Study s)throws Exception {
         JsonObject r=identity(s);var blocks=MessageDigest.getInstance("SHA-256");
-        int pathBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;Set<Long> seenDoors=new HashSet<>();
+        int pathBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;
+        int protectedPathVoids=0,protectedFarmVoids=0,protectedLava=0;Set<Long> seenDoors=new HashSet<>();
         JsonArray gaps=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
         for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4)
             for(int y=-64;y<320;y++){p.set(x,y,z);hash(blocks,x+","+y+","+z+"="+level.getBlockState(p)+"\n");}
@@ -150,9 +151,17 @@ public final class VillageWorldAudit implements ModInitializer {
             for(int y=Math.max(-60,(int)expected-24);y<=Math.min(318,(int)expected+32);y++){
                 p.set(x,y,z);var b=level.getBlockState(p);String name=id(b);
                 if(name.equals("minecraft:dirt_path")||name.equals("minecraft:farmland")){
-                    boolean gap=false;int first=0;String gapBlock="";
-                    for(int d=1;d<=8;d++){var below=level.getBlockState(new BlockPos(x,y-d,z));if(!below.isSolid()){gap=true;if(first==0){first=d;gapBlock=below.toString();}}}
+                    boolean gap=false,airOrLava=false,lava=false;int first=0;String gapBlock="";
+                    for(int d=1;d<=8;d++){
+                        var below=level.getBlockState(new BlockPos(x,y-d,z));
+                        boolean hot=id(below).equals("minecraft:lava");lava|=hot;airOrLava|=hot||below.isAir();
+                        if(!below.isSolid()){gap=true;if(first==0){first=d;gapBlock=below.toString();}}
+                    }
                     if(name.equals("minecraft:dirt_path")){pathBlocks++;if(gap)pathVoids++;}else{farmland++;if(gap)farmVoids++;}
+                    if(column.influence()==1){
+                        if(lava)protectedLava++;
+                        if(airOrLava){if(name.equals("minecraft:dirt_path"))protectedPathVoids++;else protectedFarmVoids++;}
+                    }
                     if(gap&&gaps.size()<32){JsonObject e=new JsonObject();e.addProperty("x",x);e.addProperty("y",y);e.addProperty("z",z);e.addProperty("block",name);
                         e.addProperty("base_height",h);e.addProperty("grade_height",expected);e.addProperty("influence",column.influence());e.addProperty("first_gap_depth",first);e.addProperty("gap_block",gapBlock);gaps.add(e);}
                 }
@@ -167,6 +176,8 @@ public final class VillageWorldAudit implements ModInitializer {
         }
         r.addProperty("full_sha256",hash(blocks));r.addProperty("path_blocks",pathBlocks);r.addProperty("path_columns_with_void_within_8",pathVoids);
         r.addProperty("farmland_blocks",farmland);r.addProperty("farmland_columns_with_void_within_8",farmVoids);
+        r.addProperty("protected_path_air_or_lava_columns",protectedPathVoids);r.addProperty("protected_farm_air_or_lava_columns",protectedFarmVoids);
+        r.addProperty("protected_floor_lava_columns",protectedLava);
         r.addProperty("doors",doors);r.addProperty("door_exit_warnings",blockedDoors);r.add("support_warning_examples",gaps);return r;
     }
     private boolean passable(BlockPos p){var b=level.getBlockState(p);return b.getCollisionShape(level,p).isEmpty()&&b.getFluidState().isEmpty();}

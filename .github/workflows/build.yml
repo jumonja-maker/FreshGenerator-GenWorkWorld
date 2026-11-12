@@ -11,7 +11,9 @@ jobs:
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    outputs:
+      build_blob: ${{ steps.evidence.outputs.build_blob }}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -19,23 +21,53 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Canonical Central fallback
+      - name: Canonical dependency fallback
         run: |
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
-      - name: Compile candidate and preserve existing generation contracts
-        run: gradle --no-daemon --console=plain clean build
-  villages:
+      - name: Compile actual APIs and run contract tests
+        run: |
+          gradle --no-daemon --console=plain clean build
+          python3 scripts/test_biome_region_metrics.py
+          python3 scripts/test_cave_audit_metrics.py
+          python3 scripts/test_cave_full_stage_checks.py
+          python3 scripts/test_technical_update_checks.py
+          python3 scripts/test_ci_evidence.py
+          python3 scripts/test_technical_reference_envelope.py
+          python3 scripts/test_village_checks.py
+      - name: Reproduce JAR and check unchanged unrelated runtime and data
+        run: |
+          mkdir -p build/reports/village-release
+          sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
+          gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
+          sha256sum --check build/reports/village-release/reproducible.sha256
+          python3 scripts/validate_village_release.py build
+      - name: Keep exact package and test evidence
+        id: evidence
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put build_blob build
+          'libs/*.jar' 'reports/village-release/*'
+          'test-results/test/*.xml' 'reports/*tests.json'
+  worlds:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 35
+    outputs:
+      world_fresh_42: ${{ steps.evidence.outputs.world_fresh_42 }}
+      world_fresh_1337: ${{ steps.evidence.outputs.world_fresh_1337 }}
+      world_fresh_negative: ${{ steps.evidence.outputs.world_fresh_negative }}
+      world_normal_42: ${{ steps.evidence.outputs.world_normal_42 }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {seed: '42', evidence_key: world_fresh_42}
-          - {seed: '1337', evidence_key: world_fresh_1337}
-          - {seed: '-20261111', evidence_key: world_fresh_negative}
+          - {seed: '42', scope: fresh, evidence_key: world_fresh_42}
+          - {seed: '1337', scope: fresh, evidence_key: world_fresh_1337}
+          - {seed: '-20261111', scope: fresh, evidence_key: world_fresh_negative}
+          - {seed: '42', scope: normal, evidence_key: world_normal_42}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -43,14 +75,84 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
-      - name: Canonical Central fallback
+      - name: Canonical dependency fallback
         run: |
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
-      - name: Actual baseline villages, candidate and reload
-        run: bash scripts/village_audit.sh '${{ matrix.seed }}'
-      - name: Preserve failures and actual observations
+      - name: Actual fixed villages or unaffected ordinary-world control
+        run: |
+          if [ '${{ matrix.scope }}' = fresh ]; then
+            bash scripts/village_audit.sh '${{ matrix.seed }}'
+          else
+            bash scripts/technical_update_audit.sh '${{ matrix.seed }}' normal
+          fi
+      - name: Preserve observations including failures
+        id: evidence
         if: always()
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' 'build/reports/villages/${{ matrix.seed }}' '*.json' '*.log'
+        run: |
+          report='build/reports/village/${{ matrix.seed }}'
+          if [ '${{ matrix.scope }}' = normal ]; then report='build/reports/technical-update/normal-${{ matrix.seed }}'; fi
+          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$report" '*.json' '*.log'
+  structures:
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      structures_42: ${{ steps.evidence.outputs.structures_42 }}
+      structures_1337: ${{ steps.evidence.outputs.structures_1337 }}
+      structures_negative: ${{ steps.evidence.outputs.structures_negative }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {seed: '42', evidence_key: structures_42}
+          - {seed: '1337', evidence_key: structures_1337}
+          - {seed: '-20261111', evidence_key: structures_negative}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Canonical dependency fallback
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+      - name: Actual structures and topology with vanilla control
+        run: bash scripts/technical_structure_audit.sh '${{ matrix.seed }}'
+      - name: Preserve structure evidence and warnings
+        id: evidence
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}'
+          build/reports/technical '*.json' '*.log' '*.properties'
+  publish:
+    needs: [build, worlds, structures]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Restore only this commit and run's verified evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVIDENCE_JOBS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci_evidence.py get ci-evidence
+      - name: Independently validate raw reports and prepare release
+        run: python3 scripts/validate_village_release.py publish
+      - name: Publish without overwriting a newer main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/
+          git commit -m 'build: publish verified village terrain protection 0.3.4 [skip ci]'
+          git push origin HEAD:main
