@@ -1,0 +1,29 @@
+name: Export isolated Java25 debugging runtime
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-java25.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - name: Archive only the provisioned Java25 installation
+        run: |
+          set -euo pipefail
+          mkdir jdk25
+          cp -aL "$JAVA_HOME/." jdk25/
+          ./jdk25/bin/java -version
+          tar -czf jdk25.tar.gz jdk25
+          sha256sum jdk25.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java25-debug-runtime
+          path: jdk25.tar.gz
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
