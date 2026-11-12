@@ -1,0 +1,12 @@
+{
+  "source_git_blob": "755ea88cbfdf586121ccd4a13063f09ed70743c5",
+  "source_sha256": "b2993d336f7d50e4b53db5df07f5d35b4b5abd6d29f3077fede7ef520d7341e1",
+  "exhaustive_binary_3x3_maps": 512,
+  "random_multibiome_maps": 256,
+  "independent_scalar_or_map_comparisons": 9216,
+  "rotation_reflection_checks": 6144,
+  "step_area_and_palette_checks": 768,
+  "protected_small_role_cases": 4,
+  "passed": true,
+  "scope": "Measurement-code cross-check only; not Minecraft generation or an ecological realism claim."
+}
