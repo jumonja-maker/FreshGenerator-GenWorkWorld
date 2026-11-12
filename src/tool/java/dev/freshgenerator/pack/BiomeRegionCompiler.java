@@ -21,6 +21,13 @@ public final class BiomeRegionCompiler {
 
     public static void apply(Map<String,JsonElement> out) {
         Objects.requireNonNull(out);
+        // Validate and construct the entire layer before publishing any entries. A broken
+        // second climate/router must not leave the first climate half-installed.
+        Map<String,JsonElement> staged=new TreeMap<>(out);
+        applyStaged(staged);
+        out.putAll(staged);
+    }
+    private static void applyStaged(Map<String,JsonElement> out) {
         JsonObject settings=Objects.requireNonNull(out.get(SETTINGS)).deepCopy().getAsJsonObject();
         JsonObject router=settings.getAsJsonObject("noise_router");
         JsonElement deep=G.toJsonTree(NaturalTerrainProgram.smootherstep(DEEP_FADE_START,DEEP_FADE_END,
@@ -36,7 +43,6 @@ public final class BiomeRegionCompiler {
                     "first",PREFIX+name,"second",PREFIX+saved));
             if(!router.get(name).getAsString().equals(PREFIX+name))throw new IllegalStateException("Unexpected climate routing");
             router.addProperty(name,PREFIX+selected);
-            // Debug values should describe the actual selected climate, including deep fallback.
             for(JsonElement e:settings.getAsJsonArray("debug_functions")) {
                 JsonObject entry=e.getAsJsonObject();
                 if(entry.get("function").isJsonPrimitive()&&entry.get("function").getAsString().equals(PREFIX+name))
@@ -53,8 +59,6 @@ public final class BiomeRegionCompiler {
             if(o.has("type")&&o.get("type").getAsString().equals("minecraft:noise")) {
                 if(o.get("y_scale").getAsDouble()!=0)throw new IllegalStateException("Surface climate must be 2-D");
                 o.addProperty("xz_scale",o.get("xz_scale").getAsDouble()/HORIZONTAL_SCALE);
-                // Without this, fast native coordinate shifts remain oversized relative to the
-                // enlarged climate field and can reintroduce tiny fragments at its boundaries.
                 for(String axis:List.of("shift_x","shift_z"))if(o.has(axis))
                     o.add(axis,object("type","minecraft:mul","left",1.0/HORIZONTAL_SCALE,"right",o.get(axis).deepCopy()));
                 return 1;

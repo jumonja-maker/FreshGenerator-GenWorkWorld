@@ -1,5 +1,6 @@
 package dev.freshgenerator.forest;
 
+import dev.freshgenerator.core.ColumnFloatCache;
 import dev.freshgenerator.core.ForestEcology;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -22,13 +23,16 @@ public final class ForestEnvironment {
     public static final String SETTINGS="freshgenerator:highlands_v2";
     public static final List<String> FEATURES=List.of("trees_birch_and_oak_leaf_litter","trees_birch","birch_tall",
         "trees_taiga","trees_old_growth_pine_taiga","trees_old_growth_spruce_taiga","trees_jungle","trees_sparse_jungle");
+    // Preserve the old sampling order; allocating this stencil for each site is unnecessary.
+    private static final int[] NEIGHBOUR_X={16,-16,0,0},NEIGHBOUR_Z={0,0,16,-16};
     private final Set<PlacedFeature> features=Collections.newSetFromMap(new IdentityHashMap<>());
     private final DensitySampler height,temperature,moisture;
     private final SamplerContext context=SamplerContext.builder().enableCaches().build();
     private final BiomeManager biomes;
     private final long seed;
     private final int sea;
-    private final Map<Long,Float> heights=new HashMap<>();
+    private final ColumnFloatCache heights=new ColumnFloatCache(1024);
+    // Sites include native biome lookups: keep their previous cache/lookup sequence unchanged.
     private final Map<Long,ForestEcology.Site> sites=new HashMap<>();
 
     private ForestEnvironment(WorldGenRegion region,NoiseBasedChunkGenerator generator) {
@@ -61,7 +65,6 @@ public final class ForestEnvironment {
         String id=biomes.getBiome(at.getX(),at.getY(),at.getZ()).unwrapKey().map(k->k.identifier().toString()).orElse("");
         var family=family(id);if(family==null)return true;
         int x=at.getX(),z=at.getZ();float h=height(x,z);
-        // Do not reinterpret underground decoration or elevated structures as forest floor.
         if(at.getY()<h-6||at.getY()>h+8)return true;
         long key=packed(x,z);var site=sites.get(key);
         if(site==null){site=site(x,z,h);if(sites.size()>=256)sites.clear();sites.put(key,site);}
@@ -72,18 +75,17 @@ public final class ForestEnvironment {
     private ForestEcology.Site site(int x,int z,float h) {
         double sx=(height(x+4,z)-height(x-4,z))/8.0,sz=(height(x,z+4)-height(x,z-4))/8.0;
         double neighbour=0,shore=0,edge=0;
-        for(int[] d:new int[][]{{16,0},{-16,0},{0,16},{0,-16}}){
-            int nx=x+d[0],nz=z+d[1];float nh=height(nx,nz);neighbour+=nh;
+        for(int i=0;i<NEIGHBOUR_X.length;i++){
+            int nx=x+NEIGHBOUR_X[i],nz=z+NEIGHBOUR_Z[i];float nh=height(nx,nz);neighbour+=nh;
             String id=biomes.getBiome(nx,(int)Math.ceil(nh),nz).unwrapKey().map(k->k.identifier().toString()).orElse("");
-            // Stable proxy excludes later feature lakes; cannot depend on decoration order.
             if(nh<sea+1&&(id.contains("ocean")||id.equals("minecraft:river")||id.equals("minecraft:frozen_river")))shore+=.25;
             if(family(id)==null)edge+=.25;
         }
         return new ForestEcology.Site(h,sea,Math.hypot(sx,sz),h-neighbour/4,
             temperature.sampleValue(context,x,0,z),moisture.sampleValue(context,x,0,z),shore,edge);
     }
-    private float height(int x,int z){long k=packed(x,z);Float h=heights.get(k);if(h!=null)return h;
+    private float height(int x,int z){long k=packed(x,z);float h=heights.get(k);if(!Float.isNaN(h))return h;
         float value=height.sampleValue(context,x,0,z);if(!Float.isFinite(value))throw new IllegalStateException("Invalid forest height");
-        if(heights.size()>=1024)heights.clear();heights.put(k,value);return value;}
+        heights.put(k,value);return value;}
     private static long packed(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
 }
