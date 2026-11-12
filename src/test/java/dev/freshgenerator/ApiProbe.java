@@ -1,17 +1,15 @@
 package dev.freshgenerator;
 import java.util.*;
-import java.nio.file.*;
+import dev.freshgenerator.pack.*;
 public final class ApiProbe {
  public static void main(String[] args)throws Exception {
-  for(String name:List.of("net.minecraft.world.level.levelgen.NoiseGeneratorSettings","net.minecraft.world.level.levelgen.NoiseChunk","net.minecraft.world.level.levelgen.RandomState")) {
-   var t=Class.forName(name,false,ApiProbe.class.getClassLoader());System.out.println("API_PROBE "+name);
-   for(var m:t.getDeclaredMethods())System.out.println(m.toGenericString());for(var f:t.getDeclaredFields())System.out.println(f.toGenericString());
-   if(name.endsWith("NoiseGeneratorSettings"))for(var m:t.getDeclaredMethods())if(m.getName().equals("aquifers")||m.getName().equals("noiseRouter")||m.getName().equals("debugFunctions")){
-    var q=m.getReturnType();System.out.println("RETURN_API "+q);for(var n:q.getDeclaredMethods())System.out.println(n.toGenericString());
-   }
+  var vanilla=new VanillaAssets();var pack=WorldgenCatalog.compile(vanilla);
+  for(String path:List.of("data/freshgenerator/worldgen/noise_settings/highlands_v2.json","data/freshgenerator/worldgen/density_function/highlands_v2/temperature.json","data/freshgenerator/worldgen/density_function/highlands_v2/vegetation.json","data/freshgenerator/worldgen/density_function/highlands_v2/erosion.json","data/freshgenerator/worldgen/density_function/highlands_v2/ridges.json","data/freshgenerator/worldgen/density_function/highlands_v2/continents.json","data/freshgenerator/worldgen/world_preset/world.json"))System.out.println("BIOME_RESOURCE "+path+" "+pack.get(path));
+  for(String name:List.of("net.minecraft.world.level.biome.BiomeSource","net.minecraft.world.level.biome.MultiNoiseBiomeSource","net.minecraft.world.level.biome.Climate","net.minecraft.world.level.biome.Climate$Sampler","net.minecraft.world.level.biome.Climate$TargetPoint","net.minecraft.world.level.biome.BiomeResolver","net.minecraft.world.level.levelgen.RandomState","net.minecraft.world.level.levelgen.densityfunction.DensityFunction","net.minecraft.world.level.levelgen.densityfunction.DensitySampler","net.minecraft.world.level.levelgen.densityfunction.SamplerContext")){
+   try{var t=Class.forName(name,false,ApiProbe.class.getClassLoader());System.out.println("API_PROBE "+name);
+    for(var m:t.getDeclaredMethods())System.out.println(m.toGenericString());for(var c:t.getDeclaredConstructors())System.out.println(c.toGenericString());
+    for(var f:t.getDeclaredFields())System.out.println(f.toGenericString());
+   }catch(ClassNotFoundException e){System.out.println("ABSENT_API "+name);}
   }
-  var t=Class.forName("net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator",false,ApiProbe.class.getClassLoader());String jar=Path.of(t.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
-  var p=new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","javap").toString(),"-classpath",jar,"-c","-p",t.getName()).redirectErrorStream(true).start();String text=new String(p.getInputStream().readAllBytes());if(p.waitFor()!=0)throw new AssertionError(text);
-  boolean emit=false;for(String line:text.split("\\R")){if(line.startsWith("  ")&&!line.startsWith("    ")&&line.endsWith(";"))emit=line.contains("iterateNoiseColumn(")||line.contains("getBaseHeight(");if(emit)System.out.println(line);}
  }
 }
