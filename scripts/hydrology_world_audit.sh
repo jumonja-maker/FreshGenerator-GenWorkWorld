@@ -46,7 +46,7 @@ baseline=$root/dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar
 mkdir -p "$scratch/mods"
 cp "$api" "$assets/hydrology-audit.jar" "$scratch/mods/"
 cp "$launcher" "$scratch/launcher.jar"
-read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-candidate}"
+read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate}"
 for mode in "${modes[@]}"; do
   preset=freshgenerator:world
   world=world-$mode
@@ -57,7 +57,7 @@ for mode in "${modes[@]}"; do
     reload) world=world-candidate ;;
     baseline) jar=$baseline ;;
     patch-baseline) jar=${FG_HYDROLOGY_PATCH_BASELINE_JAR:?initial patch JAR required} ;;
-    normal-baseline) preset=minecraft:normal; jar=$baseline; processors=1 ;;
+    normal-baseline|normal-repeat-1|normal-repeat-2) preset=minecraft:normal; jar=$baseline; processors=1 ;;
     normal-candidate) preset=minecraft:normal; processors=1 ;;
     distant-horizons)
       dh=${FG_HYDROLOGY_DH_JAR:-$assets/DistantHorizons-3.3.4.jar}

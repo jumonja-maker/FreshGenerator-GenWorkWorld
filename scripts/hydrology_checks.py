@@ -14,7 +14,7 @@ MISSING = -999
 WATER_FLAGS = 1 | 2
 RIVER_BIOME = 16
 MODES = ('candidate', 'baseline', 'reverse', 'parallel', 'reload',
-         'normal-baseline', 'normal-candidate')
+         'normal-baseline', 'normal-repeat-1', 'normal-repeat-2', 'normal-candidate')
 
 
 def read_json(path):
@@ -131,6 +131,42 @@ def normal_signature(result):
     return [(w['site'], w['surfaceBiomes'], [c[1:] for c in w['columns']]) for w in result['windows']]
 
 
+def compare_normal(references, candidate):
+    """No normalized blocks: each admissible value must exist at that exact
+    coordinate in three independent runs of the unchanged published JAR."""
+    require(len(references) == 3, 'Three ordinary-world references required')
+    varied = changed = total = 0
+    for wi, actual in enumerate(candidate['windows']):
+        controls = [r['windows'][wi] for r in references]
+        for old in controls:
+            require(old['site'] == actual['site'] and old['surfaceBiomes'] == actual['surfaceBiomes'],
+                    'Ordinary Minecraft coordinates or stored biome distribution changed')
+            require(old['nativeGeometrySha256'] == actual['nativeGeometrySha256'],
+                    'Ordinary native terrain/water geometry changed')
+        for ci, col in enumerate(actual['columns']):
+            require(tuple(col[1:]) in {tuple(c['columns'][ci][1:]) for c in controls},
+                    f'Unobserved ordinary-world column at window {wi}, index {ci}')
+        for window in [*controls, actual]:
+            palette, states = window['blockPalette'], window['fullBlockStates']
+            require(palette and len(set(palette)) == len(palette), 'Invalid normal block palette')
+            require(len(states) == SIDE * SIDE * 384, 'Incomplete ordinary FULL block evidence')
+            require(all(type(v) is int and 0 <= v < len(palette) for v in states), 'Invalid block state index')
+        local_varied = 0
+        for index, value in enumerate(actual['fullBlockStates']):
+            observed = {c['blockPalette'][c['fullBlockStates'][index]] for c in controls}
+            state = actual['blockPalette'][value]
+            require(state in observed, f'Unobserved ordinary block at window {wi}, block {index}: {state}')
+            local_varied += len(observed) > 1
+            changed += state != controls[0]['blockPalette'][controls[0]['fullBlockStates'][index]]
+        require(local_varied <= len(actual['fullBlockStates']) // 1000,
+                'Ordinary references too variable for a reliable comparison')
+        varied += local_varied
+        total += len(actual['fullBlockStates'])
+    return {'sampled_full_blocks': total, 'native_variable_blocks': varied,
+            'candidate_changes_from_first_reference': changed, 'unobserved_candidate_blocks': 0,
+            'native_terrain_water_geometry_exact': True, 'all_stable_reference_blocks_exact': True}
+
+
 def compare(folder, sha, seed, *, require_dh=False):
     folder = Path(folder)
     plan = read_json(folder / 'plan.json')
@@ -142,8 +178,8 @@ def compare(folder, sha, seed, *, require_dh=False):
     for mode in ('reverse', 'parallel', 'reload'):
         require(hydrology_signature(candidate) == hydrology_signature(observed[mode]),
                 f'Water, bed, or seal changed after {mode}')
-    require(normal_signature(observed['normal-baseline']) == normal_signature(observed['normal-candidate']),
-            'Ordinary Minecraft preset changed')
+    normal_control = compare_normal([observed[m] for m in ('normal-baseline', 'normal-repeat-1', 'normal-repeat-2')],
+                                    observed['normal-candidate'])
     if require_dh:
         dh = observed['distant-horizons']
         require(dh['distant_horizons'] == '3.3.4', 'Distant Horizons was not loaded')
@@ -168,7 +204,7 @@ def compare(folder, sha, seed, *, require_dh=False):
         'full_chunks_per_run': candidate['full_chunks'],
         'chunk_generation_ms': {mode: result['chunk_generation_ms'] for mode, result in observed.items()},
         'water_matches_reverse_parallel_and_reload': True,
-        'normal_world_terrain_water_and_biomes_identical': True,
+        'normal_world_reference_envelope': normal_control,
         'normal_world_canopy_differences': sum(a[0] != b[0] for old, new in
             zip(observed['normal-baseline']['windows'], observed['normal-candidate']['windows'])
             for a, b in zip(old['columns'], new['columns'])),

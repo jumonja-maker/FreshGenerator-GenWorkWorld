@@ -17,6 +17,7 @@ TERRAIN = WORLDGEN + "density_function/highlands_v2/"
 DENSITY = TERRAIN + "coherent/"
 HEIGHT = DENSITY + "height.json"
 CAVE_WEIGHT = DENSITY + "cave_weight.json"
+PRELIMINARY = TERRAIN + "preliminary_surface_level.json"
 SETTINGS = WORLDGEN + "noise_settings/highlands_v2.json"
 CLIMATE = {
     TERRAIN + "ecotone/biome_depth.json",
@@ -24,11 +25,11 @@ CLIMATE = {
     TERRAIN + "regions/biome_vegetation.json",
 }
 MANIFEST = "freshgenerator-worldgen-manifest.json"
-CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS} | CLIMATE
+CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS, PRELIMINARY} | CLIMATE
 ADDED = {DENSITY + "hydrology/" + name + ".json"
-         for name in ("base_height", "base_depth", "base_cave_weight", "cut", "model")}
+         for name in ("base_height", "base_depth", "base_cave_weight", "cut", "model", "reference_cave_weight", "reference_roof_depth")}
 MIXINS = ["RandomStateHydrologyMixin", "ClimateSamplerHydrologyMixin", "BiomeSourceHydrologyMixin",
-          "NoiseChunkHydrologyMixin", "HydrologyCarverMixin", "TreeHydrologyMixin", "StructureHydrologyMixin"]
+          "NoiseChunkHydrologyMixin", "HydrologyCarverMixin", "TreeHydrologyMixin", "StructureHydrologyMixin", "HydrologyFreezeMixin"]
 RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
     "core/DrainageModel", "core/DrainageModel$Field", "core/DrainageModel$Fields",
     "core/DrainageModel$Tile", "core/DrainageModel$Grid", "core/DrainageModel$Cell",
@@ -66,6 +67,14 @@ def check(reference, candidate):
         require(mixins == json.loads(new.read("freshgenerator.mixins.json")), "Unexpected mixin changes")
         settings = json.loads(old.read(SETTINGS))
         settings["debug_functions"].append(DEBUG)
+        for binding in settings["debug_functions"]:
+            if binding['label'] == 'FG cave access: surface':
+                binding['function'] = 'freshgenerator:highlands_v2/coherent/hydrology/base_height'
+            elif binding['label'] == 'FG cave access: roof':
+                binding['function'] = 'freshgenerator:highlands_v2/coherent/hydrology/reference_roof_depth'
+        expected_preliminary = old.read(PRELIMINARY).replace(
+            b'freshgenerator:highlands_v2/coherent/height', b'freshgenerator:highlands_v2/coherent/hydrology/base_height')
+        require(new.read(PRELIMINARY) == expected_preliminary, 'Underground aquifer reference changed')
         require(settings == json.loads(new.read(SETTINGS)), "Unexpected noise settings changes")
         for name in CLIMATE:
             expected = old.read(name).replace(b"freshgenerator:highlands_v2/coherent/depth_blocks",

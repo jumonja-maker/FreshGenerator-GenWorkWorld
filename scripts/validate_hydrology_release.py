@@ -13,7 +13,8 @@ import hydrology_checks
 from technical_update_checks import compare_folder
 from validate_hydrology_patch import JAR, REFERENCE, VERSION, check
 from validate_mountain_release import METRICS, checksum, read, save
-from village_checks import compare as compare_villages, require
+from village_checks import require
+from hydrology_village_checks import compare as compare_villages
 
 SOURCE_JAR = JAR.replace('.jar', '-sources.jar')
 SEEDS = (42, 1337, -20261111, 2037157180504249802, 801086821803359396)
@@ -38,6 +39,7 @@ def build():
     # Run on both branch and main publication paths. These synthetic tests add
     # evidence; they do not replace any real-world, village, or structure gate.
     subprocess.run([sys.executable, 'scripts/test_hydrology_core.py'], check=True)
+    subprocess.run([sys.executable, 'scripts/test_hydrology_acceptance.py'], check=True)
     core_report = Path('build') / BUILD_REPORT / CORE_REPORT
     file = Path('build') / BUILD_REPORT / 'reproducible.sha256'
     hashes = {line.split()[1]: line.split()[0] for line in file.read_text().splitlines()}
@@ -99,7 +101,7 @@ def publish():
         result = hydrology_checks.compare(folder, source, seed, require_dh=seed == 42)
         modes = hydrology_checks.MODES + (('distant-horizons',) if seed == 42 else ())
         for mode in modes:
-            expected = build_data['reference_sha256'] if mode in ('baseline', 'normal-baseline') else build_data['jar_sha256']
+            expected = build_data['reference_sha256'] if mode in ('baseline', 'normal-baseline', 'normal-repeat-1', 'normal-repeat-2') else build_data['jar_sha256']
             require(read(folder / f'{mode}.json')['jar_sha256'] == expected, 'Server used a different packaged JAR')
         hydrology[str(seed)] = result
     timings = [r['chunk_generation_ms'] for r in hydrology.values()]

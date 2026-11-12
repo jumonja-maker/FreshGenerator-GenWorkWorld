@@ -31,15 +31,15 @@ class HydrologyCompilerTest {
     }
 
     @Test
-    void changesOnlyHydrologyInputsAndAddsFivePrivateResources() {
+    void changesOnlyHydrologyInputsAndAddsSevenPrivateResources() {
         Set<String> changed = new HashSet<>();
         baseline.forEach((path, original) -> {
             assertTrue(candidate.containsKey(path), path);
             if (!original.equals(candidate.get(path))) changed.add(path);
         });
-        assertEquals(Set.of(HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, BiomeRegionCompiler.SETTINGS,
+        assertEquals(Set.of(HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, HydrologyCompiler.PRELIMINARY, BiomeRegionCompiler.SETTINGS,
                 HydrologyCompiler.BIOME_DEPTH, HydrologyCompiler.BIOME_TEMPERATURE, HydrologyCompiler.BIOME_MOISTURE), changed);
-        assertEquals(baseline.size() + 5, candidate.size());
+        assertEquals(baseline.size() + 7, candidate.size());
         assertEquals(baseline.get(HydrologyCompiler.HEIGHT), candidate.get(path(HYDROLOGY + "base_height")));
         assertEquals(baseline.get(HydrologyCompiler.CAVE_WEIGHT), candidate.get(path(HYDROLOGY + "base_cave_weight")));
     }
@@ -62,6 +62,16 @@ class HydrologyCompilerTest {
         var binding = debug.remove(debug.size() - 1).getAsJsonObject();
         assertEquals("FreshGenerator drainage", binding.get("label").getAsString());
         assertEquals(HYDROLOGY + "model", binding.get("function").getAsString());
+        for (JsonElement item : debug) {
+            var entry = item.getAsJsonObject();
+            if (entry.get("label").getAsString().equals("FG cave access: surface")) {
+                assertEquals(HYDROLOGY + "base_height", entry.get("function").getAsString());
+                entry.addProperty("function", P + "coherent/height");
+            } else if (entry.get("label").getAsString().equals("FG cave access: roof")) {
+                assertEquals(HYDROLOGY + "reference_roof_depth", entry.get("function").getAsString());
+                entry.addProperty("function", P + "cave_access/roof_depth");
+            }
+        }
         assertEquals(baseline.get(BiomeRegionCompiler.SETTINGS), settings);
     }
 
@@ -83,6 +93,20 @@ class HydrologyCompilerTest {
     }
 
     @Test
+    void undergroundReferencesDoNotFollowTheExcavatedHeight() {
+        for (String name : new String[]{"reference_cave_weight", "reference_roof_depth"}) {
+            String graph = candidate.get(path(HYDROLOGY + name)).toString();
+            assertTrue(graph.contains(HYDROLOGY + "base_height"));
+            assertFalse(graph.contains("\"" + P + "coherent/height\""));
+            assertFalse(graph.contains("\"" + P + "coherent/depth_blocks\""));
+            assertFalse(graph.contains("\"" + P + "cave_access/original_weight\""));
+        }
+        assertEquals(baseline.get(HydrologyCompiler.PRELIMINARY).toString().replace(
+                P + "coherent/height", HYDROLOGY + "base_height"),
+                candidate.get(HydrologyCompiler.PRELIMINARY).toString());
+    }
+
+    @Test
     void resourceCollisionLeavesTheCatalogIntact() {
         var input = new TreeMap<>(baseline);
         input.put(path(HYDROLOGY + "cut"), new JsonPrimitive(0));
@@ -97,7 +121,7 @@ class HydrologyCompilerTest {
 
     private static double caveWeight(double cut, double height, double depth) {
         var values = new HashMap<>(Map.of(HYDROLOGY + "cut", cut, P + "coherent/height", height,
-                P + "coherent/depth_blocks", depth, HYDROLOGY + "base_cave_weight", 1.0));
+                P + "coherent/depth_blocks", depth, HYDROLOGY + "reference_cave_weight", 1.0));
         return evaluate(candidate.get(HydrologyCompiler.CAVE_WEIGHT), values);
     }
 

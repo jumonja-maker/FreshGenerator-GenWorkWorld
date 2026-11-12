@@ -30,6 +30,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 
 /** Read-only inspection of persisted block states in native FULL chunks. */
@@ -43,7 +46,8 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Window(Site site, int[] profiles) { }
     record Plan(long seed, List<Window> windows) { }
     record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
-                       Map<String, String> blocksAtMissingStages) { }
+                       Map<String, String> blocksAtMissingStages, List<String> blockPalette,
+                       int[] fullBlockStates, String nativeGeometrySha256) { }
 
     @Override
     public void onInitialize() {
@@ -97,7 +101,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         long generationNanos = System.nanoTime() - generationStart;
         List<Observation> observations = new ArrayList<>();
         boolean candidateHydrology = !mode.startsWith("normal-") && !mode.endsWith("baseline");
-        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology));
+        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology, mode.startsWith("normal-"), level, generator));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", mode);
         result.put("jar_sha256", System.getenv("FG_HYDROLOGY_JAR_SHA256"));
@@ -137,11 +141,15 @@ public final class HydrologyWorldAudit implements ModInitializer {
         return chunks;
     }
 
-    private static Observation read(Window window, Map<Long, ChunkAccess> chunks, boolean candidateHydrology) {
+    private static Observation read(Window window, Map<Long, ChunkAccess> chunks, boolean candidateHydrology,
+                                    boolean normal, ServerLevel level, NoiseBasedChunkGenerator generator) throws Exception {
         var pos = new BlockPos.MutableBlockPos();
         int[][] columns = new int[SIDE * SIDE][];
         Map<String, Integer> biomes = new TreeMap<>();
         Map<String, String> missingStages = new TreeMap<>();
+        Map<String, Integer> palette = new LinkedHashMap<>();
+        int[] fullStates = normal ? new int[SIDE * SIDE * 384] : new int[0];
+        MessageDigest geometry = MessageDigest.getInstance("SHA-256");
         for (int dz = 0; dz < SIDE; dz++) {
             for (int dx = 0; dx < SIDE; dx++) {
                 int i = dz * SIDE + dx;
@@ -204,9 +212,20 @@ public final class HydrologyWorldAudit implements ModInitializer {
                     biomes.merge(biome.unwrapKey().orElseThrow().identifier().toString(), 1, Integer::sum);
                 }
                 columns[i] = new int[]{surface, ground, water, bed, flags, window.profiles[i]};
+                if (normal) {
+                    for (int y = -64; y < 320; y++) {
+                        String state = chunk.getBlockState(pos.set(x, y, z)).toString();
+                        fullStates[i * 384 + y + 64] = palette.computeIfAbsent(state, key -> palette.size());
+                    }
+                    if (dx % 4 == 0 && dz % 4 == 0) {
+                        int nativeGround = generator.getBaseHeight(x,z,Heightmap.Types.OCEAN_FLOOR_WG,level,level.getChunkSource().randomState());
+                        int nativeWater = generator.getBaseHeight(x,z,Heightmap.Types.WORLD_SURFACE_WG,level,level.getChunkSource().randomState());
+                        geometry.update((x+","+z+"="+nativeGround+","+nativeWater+"\n").getBytes(StandardCharsets.UTF_8));
+                    }
+                }
             }
         }
-        return new Observation(window.site, columns, biomes, missingStages);
+        return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates, HexFormat.of().formatHex(geometry.digest()));
     }
 
     private static boolean isWater(BlockState state) {

@@ -221,7 +221,7 @@ jobs:
           FG_HYDROLOGY_SKIP_BUILD: 'true'
         run: |
           if [ "$SEED" = 42 ]; then
-            export FG_HYDROLOGY_RUNS='candidate baseline reverse parallel reload normal-baseline normal-candidate distant-horizons'
+            export FG_HYDROLOGY_RUNS='candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate distant-horizons'
           fi
           bash scripts/hydrology_world_audit.sh "$SEED"
       - name: Preserve run-bound native observations

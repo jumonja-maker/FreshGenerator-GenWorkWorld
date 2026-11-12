@@ -5,9 +5,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import dev.freshgenerator.core.DensityExpr;
+import dev.freshgenerator.core.CaveAccessModel;
 import dev.freshgenerator.core.NaturalTerrainProgram;
 
 import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Map;
 import java.util.Objects;
 
@@ -22,6 +26,7 @@ public final class HydrologyCompiler {
     private static final String MODEL = HYDROLOGY + "model";
     public static final String HEIGHT = path(COHERENT + "height");
     public static final String CAVE_WEIGHT = path(COHERENT + "cave_weight");
+    public static final String PRELIMINARY = path(PREFIX + "preliminary_surface_level");
     public static final String BIOME_DEPTH = path(PREFIX + "ecotone/biome_depth");
     public static final String BIOME_TEMPERATURE = path(PREFIX + "regions/biome_temperature");
     public static final String BIOME_MOISTURE = path(PREFIX + "regions/biome_vegetation");
@@ -46,6 +51,24 @@ public final class HydrologyCompiler {
         layer.put(path(HYDROLOGY + "base_height"), original.deepCopy());
         layer.put(path(HYDROLOGY + "base_depth"), GSON.toJsonTree(sub(base, ref("minecraft:y")).json()));
         layer.put(path(HYDROLOGY + "base_cave_weight"), originalCaves.deepCopy());
+        // Copy the dependency cone, not just the root JSON: otherwise references
+        // to coherent/height silently move the old caves and underground aquifers.
+        var frozen = new HashMap<String, JsonElement>();
+        layer.put(path(HYDROLOGY + "reference_cave_weight"),
+                freeze(originalCaves, out, frozen, new HashSet<>()));
+        layer.put(path(HYDROLOGY + "reference_roof_depth"),
+                freeze(Objects.requireNonNull(out.get(path(PREFIX + "cave_access/roof_depth"))),
+                        out, frozen, new HashSet<>()));
+        JsonElement preliminary = freeze(Objects.requireNonNull(out.get(PRELIMINARY)),
+                out, frozen, new HashSet<>());
+        for (JsonElement item : debug) {
+            JsonObject binding = item.getAsJsonObject();
+            String label = binding.get("label").getAsString();
+            if (label.equals(CaveAccessModel.HEIGHT_LABEL))
+                binding.addProperty("function", HYDROLOGY + "base_height");
+            if (label.equals(CaveAccessModel.ROOF_LABEL))
+                binding.addProperty("function", HYDROLOGY + "reference_roof_depth");
+        }
         JsonObject exterior = original.getAsJsonObject().getAsJsonObject("input");
         if (!"minecraft:interpolated".equals(exterior.get("type").getAsString())) {
             throw new IllegalStateException("Expected the native interpolated coherent exterior");
@@ -64,7 +87,7 @@ public final class HydrologyCompiler {
         DensityExpr bankOrBed = new Binary(Op.MAX, cut, mul(constant(-1), cut));
         DensityExpr newBed = clamp01(mul(constant(4), bankOrBed));
         DensityExpr shallow = fade(5, 12, ref(COHERENT + "depth_blocks"));
-        JsonElement caveWeight = GSON.toJsonTree(mul(ref(HYDROLOGY + "base_cave_weight"),
+        JsonElement caveWeight = GSON.toJsonTree(mul(ref(HYDROLOGY + "reference_cave_weight"),
                 sub(constant(1), mul(newBed, shallow))).json());
 
         for (String name : layer.keySet()) {
@@ -82,7 +105,37 @@ public final class HydrologyCompiler {
         out.putAll(climate);
         out.put(HEIGHT, height);
         out.put(CAVE_WEIGHT, caveWeight);
+        out.put(PRELIMINARY, preliminary);
         out.put(BiomeRegionCompiler.SETTINGS, settings);
+    }
+
+    /** Inline only changed dependencies while keeping all native noise leaves intact. */
+    private static JsonElement freeze(JsonElement node, Map<String, JsonElement> catalog,
+                                      Map<String, JsonElement> memo, Set<String> active) {
+        if (node.isJsonPrimitive()) {
+            if (!node.getAsJsonPrimitive().isString()) return node.deepCopy();
+            String id = node.getAsString();
+            if (id.equals(COHERENT + "height")) return new JsonPrimitive(HYDROLOGY + "base_height");
+            if (id.equals(COHERENT + "depth_blocks")) return new JsonPrimitive(HYDROLOGY + "base_depth");
+            if (!id.startsWith(PREFIX) || !catalog.containsKey(path(id))) return node.deepCopy();
+            JsonElement cached = memo.get(id);
+            if (cached != null) return cached.deepCopy();
+            if (!active.add(id)) throw new IllegalStateException("Cyclic hydrology reference: " + id);
+            JsonElement original = catalog.get(path(id));
+            JsonElement rewritten = freeze(original, catalog, memo, active);
+            active.remove(id);
+            JsonElement result = original.equals(rewritten) ? node.deepCopy() : rewritten;
+            memo.put(id, result);
+            return result.deepCopy();
+        }
+        if (node.isJsonArray()) {
+            var array = new com.google.gson.JsonArray();
+            for (JsonElement item : node.getAsJsonArray()) array.add(freeze(item, catalog, memo, active));
+            return array;
+        }
+        JsonObject result = new JsonObject();
+        node.getAsJsonObject().asMap().forEach((key, value) -> result.add(key, freeze(value, catalog, memo, active)));
+        return result;
     }
 
     private static void rewriteDepth(JsonElement graph) {

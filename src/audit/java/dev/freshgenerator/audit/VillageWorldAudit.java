@@ -29,7 +29,8 @@ public final class VillageWorldAudit implements ModInitializer {
     private record Location(String id,int chunkX,int chunkZ){}
     private record Study(Location location,StructureStart start,BoundingBox box,VillageTerrainModel model){}
     private ServerLevel level;private NoiseBasedChunkGenerator generator;private RandomState state;
-    private DensitySampler heights;
+    private DensitySampler heights, currentHeights;
+    private Object drainage; private java.lang.reflect.Method waterAt;
     private final SamplerContext context=SamplerContext.builder().enableCaches().build();
     private final JsonObject report=new JsonObject();
     private final Set<Long> fullChunks=new HashSet<>();
@@ -49,6 +50,16 @@ public final class VillageWorldAudit implements ModInitializer {
         if(!settings.equals("freshgenerator:highlands_v2"))throw new AssertionError("Wrong generator");
         heights=state.getSampler(server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(ResourceKey.create(Registries.DENSITY_FUNCTION,
             Identifier.parse("freshgenerator:highlands_v2/coherent/height"))).value());
+        currentHeights=heights;
+        heights=state.getSampler(generator.generatorSettings().value().debugFunctions().functions().stream()
+            .filter(e->e.label().equals("FG cave access: surface")).findFirst().orElseThrow().function());
+        // Same observer source also runs with the historical JAR, where the new
+        // hydrology access interface does not exist. Never load its classes there.
+        try {
+            drainage=state.getClass().getMethod("freshgenerator$drainage").invoke(state);
+            if(drainage!=null)waterAt=drainage.getClass().getMethod("waterAt",int.class,int.class);
+        } catch(NoSuchMethodException absent) { drainage=null; }
+        report.addProperty("hydrology_observer_schema",1);
         report.addProperty("source_commit",System.getenv("FG_VILLAGE_SOURCE"));report.addProperty("phase",System.getenv("FG_VILLAGE_PHASE"));
         report.addProperty("seed",level.getSeed());report.addProperty("settings",settings);
         Path locationsFile=Path.of(System.getenv("FG_VILLAGE_LOCATIONS"));List<Location> locations;
@@ -112,7 +123,7 @@ public final class VillageWorldAudit implements ModInitializer {
         JsonObject r=identity(s);var deep=MessageDigest.getInstance("SHA-256");var outside=MessageDigest.getInstance("SHA-256");
         int samples=0,roofColumns=0,roofFailures=0,openColumns=0,rigidColumns=0,gradeErrors=0,predecorated=0;
         double minH=Double.POSITIVE_INFINITY,maxH=Double.NEGATIVE_INFINITY,maxFill=0,maxCut=0;
-        JsonArray failures=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
+        JsonArray failures=new JsonArray(),outsideColumns=new JsonArray();Map<String,Integer> palette=new LinkedHashMap<>();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
         for(int x=s.box.minX()-32;x<=s.box.maxX()+32;x+=2)for(int z=s.box.minZ()-32;z<=s.box.maxZ()+32;z+=2){
             var chunk=level.getChunk(Math.floorDiv(x,16),Math.floorDiv(z,16),ChunkStatus.TERRAIN);
             if(chunk.getPersistedStatus()!=ChunkStatus.TERRAIN){predecorated++;continue;}
@@ -131,12 +142,23 @@ public final class VillageWorldAudit implements ModInitializer {
             for(int y=-48;y<=Math.min(32,(int)Math.floor(Math.min(h,col.height()))-48);y++){
                 p.set(x,y,z);hash(deep,x+","+y+","+z+"="+chunk.getBlockState(p)+"\n");
             }
-            if(col.influence()==0)for(int y=-64;y<320;y+=2){p.set(x,y,z);hash(outside,x+","+y+","+z+"="+chunk.getBlockState(p)+"\n");}
+            if(col.influence()==0){
+                JsonArray raw=new JsonArray();raw.add(x);raw.add(z);
+                raw.add(Float.floatToIntBits((float)h));
+                raw.add(Float.floatToIntBits(currentHeights.sampleValue(context,x,0,z)));
+                raw.add(drainage==null?0:(Integer)waterAt.invoke(drainage,x,z));
+                for(int y=-64;y<320;y+=2){p.set(x,y,z);String block=chunk.getBlockState(p).toString();
+                    hash(outside,x+","+y+","+z+"="+block+"\n");
+                    raw.add(palette.computeIfAbsent(block,key->palette.size()));
+                }
+                outsideColumns.add(raw);
+            }
         }
         r.addProperty("terrain_columns",samples);r.addProperty("predecorated_columns_not_used",predecorated);
         r.addProperty("protected_roof_columns",roofColumns);r.addProperty("roof_failure_columns",roofFailures);
         r.addProperty("open_hole_columns",openColumns);r.addProperty("rigid_columns",rigidColumns);r.addProperty("rigid_grade_error_columns",gradeErrors);
         r.addProperty("natural_height_span",samples==0?0:maxH-minH);r.addProperty("maximum_planned_fill",maxFill);r.addProperty("maximum_planned_cut",maxCut);
+        r.add("outside_palette",G.toJsonTree(palette.keySet()));r.add("outside_columns",outsideColumns);
         r.addProperty("deep_sha256",hash(deep));r.addProperty("outside_sha256",hash(outside));r.add("examples",failures);return r;
     }
     private JsonObject scanFull(Study s)throws Exception {

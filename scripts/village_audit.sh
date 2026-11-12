@@ -50,4 +50,4 @@ PROPS
  done
  git -C "$tree" diff --exit-code -- src/main src/core src/tool
 done
-python3 scripts/village_checks.py "$report" "$source" "$seed"
+python3 scripts/hydrology_village_checks.py "$report" "$source" "$seed"

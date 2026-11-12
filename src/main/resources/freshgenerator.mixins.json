@@ -15,7 +15,10 @@
     "NoiseChunkHydrologyMixin",
     "HydrologyCarverMixin",
     "TreeHydrologyMixin",
-    "StructureHydrologyMixin"
+    "StructureHydrologyMixin",
+    "HydrologyFreezeMixin"
   ],
-  "injectors": { "defaultRequire": 1 }
+  "injectors": {
+    "defaultRequire": 1
+  }
 }
