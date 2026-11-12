@@ -1,0 +1,30 @@
+name: Inspect village deadlock evidence
+on:
+  push:
+    paths: ['.github/workflows/village-debug.yml']
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode preserved failed server evidence, never modify worlds
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,json,hashlib
+          with gzip.open('research/rejected-candidates/village-timeout-72db828.json.gz','rt') as f: bundle=json.load(f)
+          print('SOURCE_IDENTITY',bundle['identity'])
+          for name,item in bundle['files'].items():
+              raw=base64.b64decode(item['content'],validate=True)
+              assert hashlib.sha256(raw).hexdigest()==item['sha256']
+              if not name.endswith('.log'): continue
+              text=raw.decode('utf-8'); lines=text.splitlines()
+              print('FAILED_LOG',name,'lines',len(lines))
+              selected=set()
+              for i,line in enumerate(lines):
+                  if any(word in line for word in ('Server Watchdog','Server thread dump','freshgenerator.village','freshgenerator.mixin','Thread dump','WAITING','BLOCKED','Exception','Deadlock','Chunk generation')):
+                      selected.update(range(max(0,i-8),min(len(lines),i+38)))
+              for i in sorted(selected):print(str(i+1)+': '+lines[i])
+          PY
