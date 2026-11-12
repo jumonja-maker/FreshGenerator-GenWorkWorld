@@ -21,12 +21,15 @@ public final class VillageLakeGuard {
         var manager=region.getLevel().structureManager().forWorldGenRegion(region);
         if (!manager.shouldGenerateStructures()) return true;
         var state=region.getLevel().getChunkSource().randomState();
+        // Previously up to four separate 17x17 metadata sweeps per lake.
+        var pieces=VillageTerrainPlan.villagePieces(region,manager);
+        if(pieces.isEmpty())return true;
         int minX=origin.getX()-8,maxX=origin.getX()+7,minZ=origin.getZ()-8,maxZ=origin.getZ()+7;
         for(int cx=Math.floorDiv(minX,16);cx<=Math.floorDiv(maxX,16);cx++)
         for(int cz=Math.floorDiv(minZ,16);cz<=Math.floorDiv(maxZ,16);cz++) {
             var chunk=region.getChunk(cx,cz,ChunkStatus.STRUCTURE_STARTS,false);
             if(chunk==null)continue;
-            var plan=VillageTerrainPlan.create(chunk,region,manager,noise.generatorSettings().value(),state);
+            var plan=VillageTerrainPlan.createWithPieces(chunk,region,noise.generatorSettings().value(),state,pieces);
             if(plan==VillageTerrainPlan.EMPTY)continue;
             for(int x=Math.max(minX,cx*16);x<=Math.min(maxX,cx*16+15);x++)
             for(int z=Math.max(minZ,cz*16);z<=Math.min(maxZ,cz*16+15);z++)

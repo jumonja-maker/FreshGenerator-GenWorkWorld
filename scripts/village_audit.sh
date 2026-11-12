@@ -4,14 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 seed=${1:?seed};[[ "$seed" = 42 || "$seed" = 1337 || "$seed" = -20261111 ]]
 root=$PWD;baseline=7c661cecbc42328c4ef099b034393cc36afb8b50
+published=b70fc6c63dbd1c06952f4db00be0cc872eaf0c79
 source=${GITHUB_SHA:-$(git rev-parse HEAD)}
 report="$root/build/reports/village/$seed";mkdir -p "$report"
 scratch=$(mktemp -d "$root/build/village-ab.XXXXXX")
-cleanup(){ for phase in baseline candidate;do git worktree remove --force "$scratch/$phase" >/dev/null 2>&1||true;done;rm -rf -- "$scratch"; }
+cleanup(){ for phase in baseline published candidate;do git worktree remove --force "$scratch/$phase" >/dev/null 2>&1||true;done;rm -rf -- "$scratch"; }
 trap cleanup EXIT
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -XX:ActiveProcessorCount=1 -Dmax.bg.threads=1"
-for phase in baseline candidate;do
- ref=$baseline;[ "$phase" = candidate ]&&ref=$source
+for phase in baseline published candidate;do
+ ref=$baseline;[ "$phase" = published ]&&ref=$published;[ "$phase" = candidate ]&&ref=$source
  tree="$scratch/$phase";git worktree add --detach "$tree" "$ref"
  cp src/audit/java/dev/freshgenerator/audit/VillageWorldAudit.java "$tree/src/audit/java/dev/freshgenerator/audit/"
  if [ "$phase" = baseline ];then

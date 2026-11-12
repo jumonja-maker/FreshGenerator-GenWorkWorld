@@ -4,6 +4,7 @@ Do not normalize blocks, drop failed villages, or infer a pass from configuratio
 import json,re,sys
 from pathlib import Path
 BASE='7c661cecbc42328c4ef099b034393cc36afb8b50'
+PUBLISHED='b70fc6c63dbd1c06952f4db00be0cc872eaf0c79'
 COUNTS=('terrain_columns','predecorated_columns_not_used','protected_roof_columns','roof_failure_columns',
         'open_hole_columns','rigid_columns','rigid_grade_error_columns')
 FULL_COUNTS=('path_blocks','path_columns_with_void_within_8','farmland_blocks',
@@ -53,10 +54,29 @@ def validate(a,b,c,sha,seed,minimum_villages=3):
   'terrain_before':a['terrain'],'terrain_after':b['terrain'],'full_before':a['villages'],'full_after':b['villages'],
   'saved_world_equal':True,'explicit_full_chunks_per_pass':b['explicit_full_chunks'],
   'limits':'Fixed actual villages; two-block TERRAIN stride and four-block FULL hash stride. Dirt-path counts do not measure desert roads. Door screening is not villager AI; residual support warnings are retained.'}
+def verify_published(published,candidate,sha,seed):
+    require(published['completed'] is True and candidate['completed'] is True, 'Incomplete published comparison')
+    require(published['source_commit']==PUBLISHED and published['phase']=='published', 'Wrong 0.3.4 control')
+    require(candidate['source_commit']==sha and candidate['phase']=='candidate', 'Wrong optimized candidate')
+    require(published['seed']==candidate['seed']==seed, 'Published seed mismatch')
+    require(published['settings']==candidate['settings']=='freshgenerator:highlands_v2', 'Published settings mismatch')
+    for field in ('terrain','villages'):
+        before,after=published[field],candidate[field]
+        require(len(before)==len(after)>=3,'Missing published '+field+' rows')
+        for i,(old,new) in enumerate(zip(before,after)):
+            require(old==new,'Changed 0.3.4 '+field+' observation '+str(i))
+    return {'published_commit':PUBLISHED,'terrain_rows_exact':len(published['terrain']),
+            'village_rows_exact':len(published['villages']), 'published_observations_identical':True}
+
 def compare(folder,sha,seed):
  p=Path(folder);reports=[json.loads((p/(n+'.json')).read_text()) for n in ('baseline','candidate','reload')]
  for phase in ('baseline','candidate','reload'):
   require('FRESHGENERATOR_VILLAGE_AUDIT_PASS' in (p/(phase+'.log')).read_text(),'Missing native completion')
  result=validate(*reports,sha,seed)
+ published=json.loads((p/'published.json').read_text())
+ require('FRESHGENERATOR_VILLAGE_AUDIT_PASS' in (p/'published.log').read_text(),
+         'No successful 0.3.4 comparison server')
+ result['published_equivalence']=verify_published(published,reports[1],sha,seed)
+ result['actual_server_runs']=4
  (p/'comparison.json').write_text(json.dumps(result,indent=2)+'\n');print('FRESHGENERATOR_VILLAGE_PAIR_PASS '+json.dumps(result));return result
 if __name__=='__main__':compare(sys.argv[1],sys.argv[2],int(sys.argv[3]))

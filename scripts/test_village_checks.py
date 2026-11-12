@@ -1,6 +1,6 @@
 """Synthetic contract tests; these never count as native server runs."""
 import copy,json,pathlib,unittest
-from village_checks import validate,BASE
+from village_checks import validate,verify_published,BASE,PUBLISHED
 SHA='a'*40
 class VillageEvidenceTests(unittest.TestCase):
  def fixtures(self):
@@ -15,6 +15,17 @@ class VillageEvidenceTests(unittest.TestCase):
   base={'completed':True,'seed':42,'settings':'freshgenerator:highlands_v2','villages':rows,'terrain':terrain,'explicit_full_chunks':200}
   return [dict(copy.deepcopy(base),phase=p,source_commit=s) for p,s in [('baseline',BASE),('candidate',SHA),('reload',SHA)]]
  def check(self,r):return validate(*r,SHA,42)
+ def test_published_reference_is_strict(self):
+  r=self.fixtures();p=copy.deepcopy(r[1]);p.update(phase='published',source_commit=PUBLISHED)
+  self.assertEqual(3,verify_published(p,r[1],SHA,42)['village_rows_exact'])
+ def test_published_block_change_fails(self):
+  r=self.fixtures();p=copy.deepcopy(r[1]);p.update(phase='published',source_commit=PUBLISHED)
+  r[1]['villages'][0]['full_sha256']='e'*64
+  with self.assertRaises(ValueError):verify_published(p,r[1],SHA,42)
+ def test_published_terrain_change_fails(self):
+  r=self.fixtures();p=copy.deepcopy(r[1]);p.update(phase='published',source_commit=PUBLISHED)
+  r[1]['terrain'][0]['rigid_grade_error_columns']=1
+  with self.assertRaises(ValueError):verify_published(p,r[1],SHA,42)
  def fails(self,mutate):
   r=self.fixtures();mutate(r)
   with self.assertRaises((ValueError,KeyError)):self.check(r)

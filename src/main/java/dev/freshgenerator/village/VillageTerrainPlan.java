@@ -26,45 +26,66 @@ public final class VillageTerrainPlan {
         DensitySampler height=state.getSampler(settings.debugFunctions().functions().stream()
             .filter(e->e.label().equals(CaveAccessModel.HEIGHT_LABEL)).findFirst().orElseThrow().function());
         SamplerContext context=SamplerContext.builder().enableCaches().build();
-        for(int x=0;x<16;x++)for(int z=0;z<16;z++)
-            columns[x*16+z]=model.column(x0+x,z0+z,height.sampleValue(context,x0+x,0,z0+z),settings.seaLevel());
+        for(int x=0;x<16;x++)for(int z=0;z<16;z++) {
+            int wx=x0+x,wz=z0+z;
+            // Outside a village apron, a null slot is precisely a zero-influence Column.
+            if(!model.hasNearbySite(wx,wz))continue;
+            var column=model.column(wx,wz,height.sampleValue(context,wx,0,wz),settings.seaLevel());
+            if(column.influence()!=0)columns[x*16+z]=column;
+        }
     }
     public static boolean villageId(String id) { return VILLAGES.contains(id); }
-    public static VillageTerrainPlan create(ChunkAccess target, WorldGenRegion region, StructureManager manager,
-                                             NoiseGeneratorSettings settings, RandomState state) {
-        if(region==null || !manager.shouldGenerateStructures())return EMPTY;
-        ChunkPos origin=target.getPos();
-        ChunkPos metadataOrigin=region.getCenter();
-        if(Math.abs((long)origin.x()-metadataOrigin.x())>1 || Math.abs((long)origin.z()-metadataOrigin.z())>1)
+    public static VillageTerrainPlan create(ChunkAccess target,WorldGenRegion region,StructureManager manager,
+                                             NoiseGeneratorSettings settings,RandomState state) {
+        if(region==null||!manager.shouldGenerateStructures())return EMPTY;
+        checkedOrigin(target,region);
+        return createWithPieces(target,region,settings,state,villagePieces(region,manager));
+    }
+    private static ChunkPos checkedOrigin(ChunkAccess target,WorldGenRegion region) {
+        ChunkPos origin=target.getPos(),metadataOrigin=region.getCenter();
+        if(Math.abs((long)origin.x()-metadataOrigin.x())>1||Math.abs((long)origin.z()-metadataOrigin.z())>1)
             throw new IllegalArgumentException("Village target outside the current terrain/lake footprint");
+        return origin;
+    }
+    /** One local, immutable snapshot per native lava-lake invocation; never global. */
+    public static List<PoolElementStructurePiece> villagePieces(WorldGenRegion region,StructureManager manager) {
+        if(region==null||!manager.shouldGenerateStructures())return List.of();
+        ChunkPos metadataOrigin=region.getCenter();
         var registry=manager.registryAccess().lookupOrThrow(Registries.STRUCTURE);
         Set<StructureStart> seen=Collections.newSetFromMap(new IdentityHashMap<>());
-        List<VillageTerrainModel.Site> sites=new ArrayList<>();
-        // WorldGenRegion bounds are relative to ITS center, not the chunk a lake overlaps.
-        // In 26.3 create=false still throws outside the prepared dependency radius.
-        // A native lake touches center + [-8,22] blocks. With the 96-block village
-        // horizon and 24-block apron, all contributing starts are inside center +/-8.
+        List<PoolElementStructurePiece> pieces=new ArrayList<>();
+        // The prepared dependency radius belongs to region.getCenter(), not a lake target.
+        // Original +/-8 start horizon and original oversized-layout fallback are preserved.
         for(int cx=metadataOrigin.x()-8;cx<=metadataOrigin.x()+8;cx++)for(int cz=metadataOrigin.z()-8;cz<=metadataOrigin.z()+8;cz++) {
             ChunkAccess chunk=region.getChunk(cx,cz,ChunkStatus.STRUCTURE_STARTS,false);
             if(chunk==null)continue;
             for(StructureStart start:chunk.getAllStarts().values()) {
-                if(!start.isValid() || !seen.add(start))continue;
+                if(!start.isValid()||!seen.add(start))continue;
                 var key=registry.getResourceKey(start.getStructure());
-                if(key.isEmpty() || !villageId(key.get().identifier().toString()))continue;
-                // Consistent finite metadata horizon for unusually enlarged datapack villages.
+                if(key.isEmpty()||!villageId(key.get().identifier().toString()))continue;
                 int sx=start.getChunkPos().getMinBlockX(),sz=start.getChunkPos().getMinBlockZ();
                 if(start.getPieces().stream().anyMatch(p->{var b=p.getBoundingBox();return b.minX()<sx-96
-                    || b.maxX()>sx+96 || b.minZ()<sz-96 || b.maxZ()>sz+96;}))continue;
-                for(StructurePiece piece:start.getPieces()) {
-                    if(!(piece instanceof PoolElementStructurePiece pool) || !piece.isCloseToChunk(origin,24))continue;
-                    BoundingBox b=piece.getBoundingBox();
-                    int ground=b.minY()+pool.getGroundLevelDelta();
-                    if(ground<settings.seaLevel()-4 || ground>300)continue;
-                    boolean rigid=pool.getElement().getProjection()==StructureTemplatePool.Projection.RIGID
-                        && (long)(b.maxX()-b.minX()+1)*(b.maxZ()-b.minZ()+1)>=16 && b.maxY()-b.minY()>=3;
-                    sites.add(new VillageTerrainModel.Site(b.minX(),b.minZ(),b.maxX(),b.maxZ(),ground,rigid));
-                }
+                    ||b.maxX()>sx+96||b.minZ()<sz-96||b.maxZ()>sz+96;}))continue;
+                for(StructurePiece piece:start.getPieces())
+                    if(piece instanceof PoolElementStructurePiece pool)pieces.add(pool);
             }
+        }
+        return pieces.isEmpty()?List.of():List.copyOf(pieces);
+    }
+    /** Target-specific piece selection still runs independently for each overlapped chunk. */
+    public static VillageTerrainPlan createWithPieces(ChunkAccess target,WorldGenRegion region,
+            NoiseGeneratorSettings settings,RandomState state,List<PoolElementStructurePiece> pieces) {
+        if(region==null||pieces.isEmpty())return EMPTY;
+        ChunkPos origin=checkedOrigin(target,region);
+        List<VillageTerrainModel.Site> sites=new ArrayList<>();
+        for(PoolElementStructurePiece pool:pieces) {
+            if(!pool.isCloseToChunk(origin,24))continue;
+            BoundingBox b=pool.getBoundingBox();
+            int ground=b.minY()+pool.getGroundLevelDelta();
+            if(ground<settings.seaLevel()-4||ground>300)continue;
+            boolean rigid=pool.getElement().getProjection()==StructureTemplatePool.Projection.RIGID
+                &&(long)(b.maxX()-b.minX()+1)*(b.maxZ()-b.minZ()+1)>=16&&b.maxY()-b.minY()>=3;
+            sites.add(new VillageTerrainModel.Site(b.minX(),b.minZ(),b.maxX(),b.maxZ(),ground,rigid));
         }
         return sites.isEmpty()?EMPTY:new VillageTerrainPlan(origin,new VillageTerrainModel(sites),settings,state);
     }

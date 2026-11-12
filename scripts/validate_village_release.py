@@ -5,7 +5,8 @@ import gzip,hashlib,json,os,pathlib,shutil,subprocess,sys,zipfile
 import xml.etree.ElementTree as ET
 from village_checks import BASE,compare,require
 P=pathlib.Path
-VERSION='0.3.4-alpha.1'
+VERSION='0.3.5-alpha.1'
+PUBLISHED_VERSION='0.3.4-alpha.1'
 BASE_VERSION='0.3.3-alpha.1'
 JAR=f'FreshGenerator-Fabric-26.3-{VERSION}.jar'
 SOURCES=JAR.replace('.jar','-sources.jar')
@@ -37,7 +38,26 @@ def package_check(jar,baseline=None):
   for n in sorted(oldclasses):require(old.read(n)==new.read(n),'Unrelated runtime changed: '+n)
   manifest=json.loads(new.read('freshgenerator-worldgen-manifest.json'));require(len(manifest['generated_sha256'])==344,'Wrong generated pack')
   for n,h in manifest['generated_sha256'].items():require(hashlib.sha256(new.read(n)).hexdigest()==h,'Generated fingerprint mismatch: '+n)
- return {'worldgen_resources_byte_identical':344,'previous_runtime_classes_byte_identical':28,
+ # Nothing besides these three village classes may change from the published 0.3.4.
+ with zipfile.ZipFile(jar) as candidate,zipfile.ZipFile(
+       f'dist/FreshGenerator-Fabric-26.3-{PUBLISHED_VERSION}.jar') as published:
+  oldnames=set(published.namelist());newnames=set(candidate.namelist())
+  require(oldnames==newnames,'Unexpected published JAR entries')
+  changed={'dev/freshgenerator/village/'+p+'.class'
+           for p in ('VillageLakeGuard','VillageTerrainPlan','VillageTerrainModel')}
+  for name in oldnames:
+   if name in changed:continue
+   if name=='fabric.mod.json':
+    old_meta=json.loads(published.read(name));new_meta=json.loads(candidate.read(name))
+    old_meta['version']=VERSION
+    require(old_meta==new_meta,'Changed loader contract')
+   else:
+    require(published.read(name)==candidate.read(name),'Unexpected changed published entry: '+name)
+  require(all(published.read(name)!=candidate.read(name) for name in changed),
+          'Optimization class was not rebuilt')
+ return {'published_034_changed_classes_only':sorted(changed),
+         'published_034_other_jar_entries_identical':True,
+         'worldgen_resources_byte_identical':344,'previous_runtime_classes_byte_identical':28,
   'added_runtime_classes':sorted(ADDED),'one_public_world':'freshgenerator:world','native_structure_tables_unchanged':True}
 def build():
  sha=os.environ['GITHUB_SHA'];jar=P('build/libs')/JAR;sources=P('build/libs')/SOURCES
@@ -87,7 +107,9 @@ def publish():
   r=audit['summary'][f'fg-{seed}']
   require(r['detached_sky_terrain_components']==0 and r['village_suspended_piece_candidates']==0,'Terrain/support regression')
   require(r['native_structures_equal']==52 and r['native_structure_sets_equal']==21,'Native structure placement changed')
- result={**b,'actual_server_runs':20,'server_breakdown':{'paired_villages_and_reload':9,'normal_control':5,'structures_and_vanilla_controls':6},
+ require(all(r['published_equivalence']['published_observations_identical'] for r in pairs.values()),
+         '0.3.4 village parity failed')
+ result={**b,'actual_server_runs':23,'server_breakdown':{'paired_villages_published_and_reload':12,'normal_control':5,'structures_and_vanilla_controls':6},
   'run_url':f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
   'ci_evidence':read(root/'index.json'),'paired_villages':pairs,
   'terrain_before':before,'terrain_after':after,'village_objects_before':totals(pairs,'full_before'),'village_objects_after':totals(pairs,'full_after'),
@@ -97,7 +119,8 @@ def publish():
    'Local terrain and shallow roof change; deep terrain and outside-plot samples are checked exactly before features, not all decorated underground blocks',
    'No post-load repair or editing of old chunks; transitions to existing village chunks may remain visible',
    'Door screening is not villager pathfinding; support warnings and missing bounded-search structures retained',
-   'No client/shader/modpack/DH/C2ME test or measured performance claim']}
+   'No client/shader/modpack/DH/C2ME test or measured performance claim',
+            'Fewer repeated region metadata passes does not establish a measured FPS or heap improvement']}
  dist=P('dist');(dist/'audits').mkdir(parents=True,exist_ok=True)
  for src in (jar,sources):
   shutil.copyfile(src,dist/src.name);(dist/(src.name+'.sha256')).write_text(checksum(src)+'  '+src.name+'\n')

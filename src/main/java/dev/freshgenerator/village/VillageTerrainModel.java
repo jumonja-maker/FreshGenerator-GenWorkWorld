@@ -47,6 +47,15 @@ public final class VillageTerrainModel {
                 .thenComparingInt(Site::groundY).thenComparing(Site::rigid)).toList();
     }
     public List<Site> sites() { return sites; }
+    /** Exact zero-influence distance precheck; no height queries or allocations. */
+    public boolean hasNearbySite(int x, int z) {
+        for (Site site : sites) {
+            double dx = Math.max(Math.max((double)site.minX() - x, x - (double)site.maxX()), 0.0);
+            double dz = Math.max(Math.max((double)site.minZ() - z, z - (double)site.maxZ()), 0.0);
+            if (dx*dx + dz*dz < RADIUS*RADIUS) return true;
+        }
+        return false;
+    }
     public Column column(int x, int z, double baseHeight, int seaLevel) {
         if (!Double.isFinite(baseHeight)) throw new IllegalArgumentException("Nonfinite terrain height");
         double protection = 0, outer = 0, weightSum = 0, targetSum = 0;
