@@ -21,8 +21,8 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** Read-only paired measurements. The same observer runs on 0.3.3 and candidate.
- * Expected policy columns are never used to write blocks or filter failures.
+/** Read-only paired measurements. Identical source on baseline and candidate.
+ * All originally selected villages are retained, including native layouts without farms.
  */
 public final class VillageWorldAudit implements ModInitializer {
     private static final Gson G=new GsonBuilder().setPrettyPrinting().create();
@@ -55,10 +55,14 @@ public final class VillageWorldAudit implements ModInitializer {
         if(Files.exists(locationsFile))locations=Arrays.asList(G.fromJson(Files.readString(locationsFile),Location[].class));
         else {
             locations=new ArrayList<>();
-            locations.add(locate(server,List.of("village_plains","village_desert","village_savanna","village_snowy","village_taiga"),8192,8192,24));
+            var all=List.of("village_plains","village_desert","village_savanna","village_snowy","village_taiga");
+            locations.add(locate(server,all,8192,8192,24));
             Location savanna=locate(server,List.of("village_savanna"),-8192,8192,48);
             if(!locations.contains(savanna))locations.add(savanna);
-            if(locations.size()<2)locations.add(locate(server,List.of("village_plains","village_desert","village_snowy","village_taiga"),-12288,-8192,32));
+            Location west=locate(server,all,-8192,8192,32);
+            if(!locations.contains(west))locations.add(west);
+            if(locations.size()<3){Location south=locate(server,all,-12288,-8192,32);if(!locations.contains(south))locations.add(south);}
+            if(locations.size()<3)throw new AssertionError("Insufficient distinct fixed-origin villages");
             Files.writeString(locationsFile,G.toJson(locations)+"\n");
         }
         List<Study> studies=new ArrayList<>();
@@ -107,12 +111,14 @@ public final class VillageWorldAudit implements ModInitializer {
     private JsonObject scanTerrain(Study s)throws Exception {
         JsonObject r=identity(s);var deep=MessageDigest.getInstance("SHA-256");var outside=MessageDigest.getInstance("SHA-256");
         int samples=0,roofColumns=0,roofFailures=0,openColumns=0,rigidColumns=0,gradeErrors=0,predecorated=0;
+        double minH=Double.POSITIVE_INFINITY,maxH=Double.NEGATIVE_INFINITY,maxFill=0,maxCut=0;
         JsonArray failures=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
         for(int x=s.box.minX()-32;x<=s.box.maxX()+32;x+=2)for(int z=s.box.minZ()-32;z<=s.box.maxZ()+32;z+=2){
             var chunk=level.getChunk(Math.floorDiv(x,16),Math.floorDiv(z,16),ChunkStatus.TERRAIN);
             if(chunk.getPersistedStatus()!=ChunkStatus.TERRAIN){predecorated++;continue;}
             double h=height(x,z);var col=s.model.column(x,z,h,generator.getSeaLevel());samples++;
             int top=chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,x&15,z&15)+1;
+            if(col.influence()>0){minH=Math.min(minH,h);maxH=Math.max(maxH,h);maxFill=Math.max(maxFill,col.height()-h);maxCut=Math.max(maxCut,h-col.height());}
             if(col.influence()==1){
                 roofColumns++;boolean bad=false;
                 for(int y=(int)Math.floor(col.height())-2;y>=(int)Math.floor(col.height())-12;y--){p.set(x,y,z);if(!chunk.getBlockState(p).isSolid())bad=true;}
@@ -130,21 +136,25 @@ public final class VillageWorldAudit implements ModInitializer {
         r.addProperty("terrain_columns",samples);r.addProperty("predecorated_columns_not_used",predecorated);
         r.addProperty("protected_roof_columns",roofColumns);r.addProperty("roof_failure_columns",roofFailures);
         r.addProperty("open_hole_columns",openColumns);r.addProperty("rigid_columns",rigidColumns);r.addProperty("rigid_grade_error_columns",gradeErrors);
+        r.addProperty("natural_height_span",samples==0?0:maxH-minH);r.addProperty("maximum_planned_fill",maxFill);r.addProperty("maximum_planned_cut",maxCut);
         r.addProperty("deep_sha256",hash(deep));r.addProperty("outside_sha256",hash(outside));r.add("examples",failures);return r;
     }
     private JsonObject scanFull(Study s)throws Exception {
         JsonObject r=identity(s);var blocks=MessageDigest.getInstance("SHA-256");
         int pathBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;Set<Long> seenDoors=new HashSet<>();
-        BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
+        JsonArray gaps=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
         for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4)
             for(int y=-64;y<320;y++){p.set(x,y,z);hash(blocks,x+","+y+","+z+"="+level.getBlockState(p)+"\n");}
         for(int x=s.box.minX();x<=s.box.maxX();x++)for(int z=s.box.minZ();z<=s.box.maxZ();z++){
-            double expected=s.model.column(x,z,height(x,z),generator.getSeaLevel()).height();
+            double h=height(x,z);var column=s.model.column(x,z,h,generator.getSeaLevel());double expected=column.height();
             for(int y=Math.max(-60,(int)expected-24);y<=Math.min(318,(int)expected+32);y++){
                 p.set(x,y,z);var b=level.getBlockState(p);String name=id(b);
                 if(name.equals("minecraft:dirt_path")||name.equals("minecraft:farmland")){
-                    boolean gap=false;for(int d=1;d<=8;d++)if(!level.getBlockState(new BlockPos(x,y-d,z)).isSolid())gap=true;
+                    boolean gap=false;int first=0;String gapBlock="";
+                    for(int d=1;d<=8;d++){var below=level.getBlockState(new BlockPos(x,y-d,z));if(!below.isSolid()){gap=true;if(first==0){first=d;gapBlock=below.toString();}}}
                     if(name.equals("minecraft:dirt_path")){pathBlocks++;if(gap)pathVoids++;}else{farmland++;if(gap)farmVoids++;}
+                    if(gap&&gaps.size()<32){JsonObject e=new JsonObject();e.addProperty("x",x);e.addProperty("y",y);e.addProperty("z",z);e.addProperty("block",name);
+                        e.addProperty("base_height",h);e.addProperty("grade_height",expected);e.addProperty("influence",column.influence());e.addProperty("first_gap_depth",first);e.addProperty("gap_block",gapBlock);gaps.add(e);}
                 }
                 if(name.endsWith("_door")&&b.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)&&b.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF)==DoubleBlockHalf.LOWER&&seenDoors.add(p.asLong())){
                     doors++;Direction f=b.getValue(BlockStateProperties.HORIZONTAL_FACING);boolean exit=false;
@@ -157,7 +167,7 @@ public final class VillageWorldAudit implements ModInitializer {
         }
         r.addProperty("full_sha256",hash(blocks));r.addProperty("path_blocks",pathBlocks);r.addProperty("path_columns_with_void_within_8",pathVoids);
         r.addProperty("farmland_blocks",farmland);r.addProperty("farmland_columns_with_void_within_8",farmVoids);
-        r.addProperty("doors",doors);r.addProperty("door_exit_warnings",blockedDoors);return r;
+        r.addProperty("doors",doors);r.addProperty("door_exit_warnings",blockedDoors);r.add("support_warning_examples",gaps);return r;
     }
     private boolean passable(BlockPos p){var b=level.getBlockState(p);return b.getCollisionShape(level,p).isEmpty()&&b.getFluidState().isEmpty();}
 }
