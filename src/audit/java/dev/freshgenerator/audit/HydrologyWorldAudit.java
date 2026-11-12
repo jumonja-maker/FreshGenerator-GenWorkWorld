@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.QuartPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
@@ -41,7 +42,8 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Site(String kind, int x, int z) { }
     record Window(Site site, int[] profiles) { }
     record Plan(long seed, List<Window> windows) { }
-    record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes) { }
+    record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
+                       Map<String, String> blocksAtMissingStages) { }
 
     @Override
     public void onInitialize() {
@@ -139,6 +141,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         var pos = new BlockPos.MutableBlockPos();
         int[][] columns = new int[SIDE * SIDE][];
         Map<String, Integer> biomes = new TreeMap<>();
+        Map<String, String> missingStages = new TreeMap<>();
         for (int dz = 0; dz < SIDE; dz++) {
             for (int dx = 0; dx < SIDE; dx++) {
                 int i = dz * SIDE + dx;
@@ -157,6 +160,9 @@ public final class HydrologyWorldAudit implements ModInitializer {
                     if (isWater(state)) {
                         water = expected;
                         while (water < surface && isWater(chunk.getBlockState(pos.set(x, water + 1, z)))) water++;
+                    } else {
+                        missingStages.put(x + "," + expected + "," + z,
+                                BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
                     }
                 }
                 if (water == MISSING) {
@@ -200,7 +206,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
                 columns[i] = new int[]{surface, ground, water, bed, flags, window.profiles[i]};
             }
         }
-        return new Observation(window.site, columns, biomes);
+        return new Observation(window.site, columns, biomes, missingStages);
     }
 
     private static boolean isWater(BlockState state) {

@@ -13,7 +13,9 @@
     "ClimateSamplerHydrologyMixin",
     "BiomeSourceHydrologyMixin",
     "NoiseChunkHydrologyMixin",
-    "HydrologyCarverMixin"
+    "HydrologyCarverMixin",
+    "TreeHydrologyMixin",
+    "StructureHydrologyMixin"
   ],
   "injectors": { "defaultRequire": 1 }
 }

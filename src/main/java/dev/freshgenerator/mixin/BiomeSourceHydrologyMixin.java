@@ -20,11 +20,6 @@ abstract class BiomeSourceHydrologyMixin {
 
     @Shadow private Climate.ParameterList<Holder<Biome>> parameters() { throw new AssertionError(); }
 
-    @Inject(method = "createResolver", at = @At("RETURN"), cancellable = true)
-    private void freshgenerator$pointBiomes(Climate.Sampler climate, CallbackInfoReturnable<BiomeResolver> callback) {
-        freshgenerator$wrap(climate, callback);
-    }
-
     @Inject(method = "createResolverForChunk", at = @At("RETURN"), cancellable = true)
     private void freshgenerator$chunkBiomes(Climate.Sampler climate, int x, int y, int z, int sx, int sy, int sz,
                                             CallbackInfoReturnable<BiomeResolver> callback) {

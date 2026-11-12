@@ -25,6 +25,6 @@ abstract class NoiseChunkHydrologyMixin {
     private void freshgenerator$surfaceWater(RandomState state, Beardifier beard, NoiseGeneratorSettings settings,
                                              Aquifer.FluidPicker picker, Blender blender, DensityVolume volume, CallbackInfo callback) {
         var sampler = ((HydrologyAccess) (Object) state).freshgenerator$drainage();
-        if (sampler != null && blender.isEmpty()) aquifer = new HydrologyAquifer(aquifer, sampler);
+        if (sampler != null && blender.isEmpty() && !HydrologyAccess.STRUCTURE_PLANNING.isBound()) aquifer = new HydrologyAquifer(aquifer, sampler);
     }
 }

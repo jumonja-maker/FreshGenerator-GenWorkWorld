@@ -99,7 +99,7 @@ public record DrainageDensity(DensityFunction terrain, DensityFunction continent
 
         @Override
         public float sampleValue(SamplerContext context, int x, int y, int z) {
-            return tile(x, z).cutAt(x, z);
+            return HydrologyAccess.STRUCTURE_PLANNING.isBound() ? 0 : tile(x, z).cutAt(x, z);
         }
 
         @Override

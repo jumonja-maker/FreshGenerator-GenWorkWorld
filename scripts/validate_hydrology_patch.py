@@ -28,7 +28,7 @@ CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS} | CLIMATE
 ADDED = {DENSITY + "hydrology/" + name + ".json"
          for name in ("base_height", "base_depth", "base_cave_weight", "cut", "model")}
 MIXINS = ["RandomStateHydrologyMixin", "ClimateSamplerHydrologyMixin", "BiomeSourceHydrologyMixin",
-          "NoiseChunkHydrologyMixin", "HydrologyCarverMixin"]
+          "NoiseChunkHydrologyMixin", "HydrologyCarverMixin", "TreeHydrologyMixin", "StructureHydrologyMixin"]
 RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
     "core/DrainageModel", "core/DrainageModel$Field", "core/DrainageModel$Fields",
     "core/DrainageModel$Tile", "core/DrainageModel$Grid", "core/DrainageModel$Cell",
