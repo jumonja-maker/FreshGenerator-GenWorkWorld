@@ -10,71 +10,55 @@ jobs:
   inspect:
     if: contains(github.event.head_commit.message, '[inspect-hydrology]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Decode and compare the failed run's original evidence
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Archive the exact source and verified raw observations
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, re, urllib.request
-          REPO=os.environ['REPO']; RUN=43264955560
-          SHA='14254dfab64063990e8a695c2de7e350ba1958cc'
+          import base64, gzip, hashlib, json, os, re, subprocess, urllib.request
+          from pathlib import Path
+          REPO=os.environ['REPO']; RUN=43328807182
+          SHA='d952a8328b659cf00902b7c23b334bc4f404e3c3'
+          root=Path('diagnosis'); root.mkdir()
+          subprocess.run(['git','archive','--format=tar.gz','--output=diagnosis/source.tar.gz','HEAD'],check=True)
           def get(path, binary=False):
               request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
                   headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
-              with urllib.request.urlopen(request, timeout=60) as response: data=response.read(40000000)
+              with urllib.request.urlopen(request,timeout=90) as response: data=response.read(80000000)
               return data if binary else json.loads(data)
           jobs=get('/actions/runs/'+str(RUN)+'/jobs?per_page=100')['jobs']
+          index=[]
           for job in jobs:
               if job['conclusion']!='failure': continue
-              print('\n=== JOB', job['name'], job['id'], '===')
-              log=get('/actions/jobs/'+str(job['id'])+'/logs', True).decode('utf-8-sig')
-              for line in log.splitlines():
-                  if 'ValueError:' in line or 'CI_EVIDENCE_STORED' in line: print(line)
+              log=get('/actions/jobs/'+str(job['id'])+'/logs',True).decode('utf-8-sig')
               matches=re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)
+              print(job['name'],[line for line in log.splitlines() if 'ValueError:' in line])
               if not matches: continue
               item=json.loads(matches[-1]); blob=get('/git/blobs/'+item['blob'])
               raw=base64.b64decode(blob['content'])
               assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==item['blob']
               bundle=json.loads(gzip.decompress(raw))
               assert bundle['identity']['GITHUB_SHA']==SHA and bundle['identity']['GITHUB_RUN_ID']==str(RUN)
-              files={}
-              for name, entry in bundle['files'].items():
-                  data=base64.b64decode(entry['content']); assert hashlib.sha256(data).hexdigest()==entry['sha256']
-                  files[name]=data
-              print('FILES',[(n,len(v)) for n,v in files.items()])
-              if job['name'].startswith('structures'):
-                  for name, data in files.items():
-                      if not name.endswith('.log'): continue
-                      lines=data.decode('utf-8',errors='replace').splitlines()
-                      for i,line in enumerate(lines):
-                          if ('A single server tick took' in line or 'Server Watchdog' in line or
-                              'Description: Watching Server' in line or '"Server thread"' in line):
-                              print('STACK',name,'\n'+'\n'.join(lines[max(0,i-4):i+85]))
-              elif job['name'].startswith('Native hydrology'):
-                  docs={n:json.loads(v) for n,v in files.items() if n.endswith('.json')}
-                  for a,b in [('candidate.json','reverse.json'),('candidate.json','parallel.json'),
-                              ('candidate.json','reload.json'),('normal-baseline.json','normal-candidate.json')]:
-                      if a not in docs or b not in docs: continue
-                      differences=[]
-                      for wa,wb in zip(docs[a]['windows'],docs[b]['windows']):
-                          for i,(ca,cb) in enumerate(zip(wa['columns'],wb['columns'])):
-                              sig=lambda c: c[1:] if a.startswith('normal') else (c[2],c[3],c[4]&15) if c[5] else None
-                              if sig(ca)!=sig(cb):
-                                  x=wa['site']['x']+i%33-16; z=wa['site']['z']+i//33-16
-                                  differences.append({'site':wa['site'],'x':x,'z':z,'a':ca,'b':cb})
-                          ba=wa.get('surfaceBiomes'); bb=wb.get('surfaceBiomes')
-                          if a.startswith('normal') and ba!=bb: print('BIOME DIFFERENCE',wa['site'],str(ba)[:500],str(bb)[:500])
-                      print('DIFF',a,b,'count',len(differences),json.dumps(differences[:16]))
-              else:
-                  for name,data in files.items():
-                      if not name.endswith('.json'): continue
-                      doc=json.loads(data)
-                      print('VILLAGE',name,'keys',list(doc) if isinstance(doc,dict) else type(doc).__name__)
-                      if isinstance(doc,dict):
-                          for key,value in doc.items():
-                              if key in ('villages','terrain','full','observations'):
-                                  print(key,json.dumps(value)[:16000])
-                              elif not isinstance(value,(list,dict)): print(key,value)
+              folder=root/str(job['id']); folder.mkdir()
+              (folder/'job.log').write_text(log)
+              (folder/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
+              for name,entry in bundle['files'].items():
+                  path=Path(name)
+                  assert not path.is_absolute() and '..' not in path.parts
+                  data=base64.b64decode(entry['content'])
+                  assert hashlib.sha256(data).hexdigest()==entry['sha256']
+                  dest=folder/path; dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+              index.append({'job':job['name'],'id':job['id'],'blob':item['blob'],'files':list(bundle['files'])})
+          (root/'index.json').write_text(json.dumps(index,indent=2))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-diagnosis-d952a83
+          path: diagnosis/
+          retention-days: 3
+          compression-level: 9
+          if-no-files-found: error
