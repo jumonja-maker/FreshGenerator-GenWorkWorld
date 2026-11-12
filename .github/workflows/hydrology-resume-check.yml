@@ -1,0 +1,77 @@
+name: Compile reviewed hydrology corrections
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-resume-check.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Recover hash-verified reviewed patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,pathlib,subprocess,urllib.request
+          blob='d1ca89f41a16c35498bbc2f396dc301c44d959f0'
+          request=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+blob,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=60) as response: data=json.load(response)
+          encoded=''.join(data['content'].split())
+          # Correct one explicitly identified transport transcription; the entire
+          # uncompressed patch must still match the independently tested SHA-256.
+          assert encoded.count('/fRATTrofXATTrofX')==1
+          encoded=encoded.replace('/fRATTrofXATTrofX','/fRDN/ATTrofX',1)
+          packed=base64.b64decode(encoded,validate=True)
+          assert hashlib.sha1(('blob '+str(len(packed))+'\0').encode()+packed).hexdigest()=='2599c0b1c5a5b2435ade8c2318c7d4793c7cfbd5'
+          patch=gzip.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest()=='c024bd56384fd5d13a9256ffe8760573b6b5b9f73f85caf5e2c189f03ed80f56'
+          pathlib.Path('/tmp/hydrology-fixes.patch').write_bytes(patch)
+          subprocess.run(['git','checkout','--detach','c30b90900b3c2d2c2abd5903baaca418ed23f398'],check=True)
+          subprocess.run(['git','apply','--check','--index','/tmp/hydrology-fixes.patch'],check=True)
+          subprocess.run(['git','apply','--index','/tmp/hydrology-fixes.patch'],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          expected={'src/tool/java/dev/freshgenerator/pack/HydrologyCompiler.java':'1f2f2ed5fa57ec9637bd64e6e313225c608e31a6','src/main/java/dev/freshgenerator/mixin/HydrologyFreezeMixin.java':'8096df5844482114d9a92d1eca503c6c360135ed','scripts/hydrology_village_checks.py':'3593f4b70bf26ad6568e0119a65a8c86607406d8','scripts/test_hydrology_acceptance.py':'64b603d9401270e063201f7f7da85410d6676cbe'}
+          for path,sha in expected.items(): assert subprocess.check_output(['git','hash-object',path],text=True).strip()==sha
+          assert len(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())==15
+      - name: Compile against real Minecraft APIs and test
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar 2>&1 | tee /tmp/hydrology-compile.log
+          python3 -m unittest discover -s scripts -p 'test_*.py' 2>&1 | tee /tmp/hydrology-python.log
+          python3 scripts/validate_hydrology_patch.py
+      - name: Commit only to the unchanged PR branch after successful tests
+        run: |
+          set -euo pipefail
+          git fetch origin fix/lake-river-generation-v2
+          test "$(git rev-parse FETCH_HEAD)" = c30b90900b3c2d2c2abd5903baaca418ed23f398
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: stabilize river freezing and preserve original village and cave references' -m 'Freeze dependency cones rather than mutable root aliases. Audit exact outside blocks within bounded hydrology footprints and compare ordinary-world full blocks with repeated unchanged controls. Retain strict water/ice, village safety, deep terrain, structure and performance gates.'
+          git push origin HEAD:refs/heads/fix/lake-river-generation-v2
+          git rev-parse HEAD | tee /tmp/hydrology-correction-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reviewed-hydrology-corrections
+          path: |
+            /tmp/hydrology-fixes.patch
+            /tmp/hydrology-compile.log
+            /tmp/hydrology-python.log
+            /tmp/hydrology-correction-commit.txt
+            build/test-results/test/
+            build/reports/tests/test/
+            build/reports/village-release/
+          retention-days: 7
+          if-no-files-found: error
