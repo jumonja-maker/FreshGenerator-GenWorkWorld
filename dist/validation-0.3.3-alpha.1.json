@@ -1,0 +1,953 @@
+{
+  "version": "0.3.3-alpha.1",
+  "source_commit": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+  "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
+  "unit_tests_passed": 196,
+  "metric_tests_passed": 98,
+  "metrics": {
+    "biome-region-metric-tests.json": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cave-metrics-tests.json": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cave-full-stage-tests.json": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "technical-update-check-tests.json": {
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "ci-evidence-tests.json": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "technical-reference-tests.json": {
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "jar_sha256": "a63e1fa936ceb86f2ece8cb1d92424becdc3e984eede6cd5742163432ebb6918",
+  "sources_sha256": "f515629507c48f5d46a0b75ca61a425f56126be15eacb4be7475196f643ba78e",
+  "repeat_build_byte_identical": true,
+  "worldgen_data_resources_identical": 344,
+  "all_data_and_assets_identical": true,
+  "changed_runtime_classes": [],
+  "existing_runtime_classes_byte_identical": 28,
+  "new_runtime_classes": [],
+  "forest_runtime_byte_identical": true,
+  "cave_runtime_byte_identical": true,
+  "experimental_height_cache_in_game_jar": false,
+  "experimental_cave_clamp_in_game_jar": false,
+  "mixins_and_dependency_contract_unchanged": true,
+  "actual_server_runs": 26,
+  "server_breakdown": {
+    "paired_worlds_three_references_and_reload": 20,
+    "structures_and_vanilla_controls": 6
+  },
+  "run_url": "https://github.com/jumonja-maker/FreshGenerator-GenWorkWorld/actions/runs/43175196931",
+  "ci_evidence": {
+    "identity": {
+      "GITHUB_SHA": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+      "GITHUB_RUN_ID": "43175196931",
+      "GITHUB_RUN_ATTEMPT": "1",
+      "GITHUB_REPOSITORY": "jumonja-maker/FreshGenerator-GenWorkWorld"
+    },
+    "bundles": [
+      {
+        "name": "technical-build",
+        "files": 33,
+        "sha256": "5891224f72dd8009cbd2c0656d2e3d4f296e2aa4570c0fc3410aa337962c524a",
+        "git_blob": "459522a1fd61cfd877473d5eaf79ee2ea0b9c8e6",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-structures-1337",
+        "files": 8,
+        "sha256": "9b7f42249ac7495855b2e5cd0fcd5664098cb767a59503090d36a1c2d7fddbc2",
+        "git_blob": "f288c4676920dc78a97e3db5bd807f80074b7895",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-structures-42",
+        "files": 8,
+        "sha256": "f46f0e4359fbd7ed04a8ba392cbbd1c755a3e8a339c58a045e247499e0af793c",
+        "git_blob": "c8263b68c261fe86f97876a355d82532a637666a",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-structures--20261111",
+        "files": 8,
+        "sha256": "9138366711b971512df1f60aee8d46f7a644d3b92de31abec75e64c753716190",
+        "git_blob": "105344130419c84bcd4fecac17c0bf62cd9ba5ed",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-world-fresh-1337",
+        "files": 13,
+        "sha256": "a64be0235324615d4ca6a012c6c90318da271cf26a4c4d62601b64afe5a04eac",
+        "git_blob": "ee0831ecd65098e985d858f103c3fb4a82760a54",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-world-fresh-42",
+        "files": 13,
+        "sha256": "e9aa8fffc0f466ded4127f006842c0304ea866d29615ecab48e2a5c913c5b367",
+        "git_blob": "dc94be5dbaa9e82f8eb69faa82cb1851ef8579d0",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-world-fresh--20261111",
+        "files": 13,
+        "sha256": "80e42c81a3f1345683e8d45f6598bdc1639dda48199f4b2d8fa69de8087ff762",
+        "git_blob": "eab371a374e8d75bf25a09c657d97667d634ddf2",
+        "source_run_attempt": "1"
+      },
+      {
+        "name": "technical-world-normal-42",
+        "files": 13,
+        "sha256": "846aa98b249e1597d06cb32904594f060fb9253fdbe14bdbe43462e4ccb4dc4f",
+        "git_blob": "7dd7915af5676fd4197a01a566808eb3e56999bc",
+        "source_run_attempt": "1"
+      }
+    ]
+  },
+  "one_public_world": "freshgenerator:world",
+  "paired_worlds": {
+    "fresh-42": {
+      "source_commit": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+      "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
+      "seed": 42,
+      "scope": "fresh",
+      "actual_server_runs": 5,
+      "native_map_samples_per_version": 212992,
+      "stored_biome_columns_per_version": 1280,
+      "full_block_states_hashed_per_version": 491520,
+      "explicit_full_chunks_per_pass": 180,
+      "worldgen_maps_equal": true,
+      "full_sample_equal": true,
+      "saved_world_equal": true,
+      "reference_repeat_equal": true,
+      "reference_block_evidence": {
+        "sampled_blocks": 491520,
+        "reference_variable_blocks": 0,
+        "candidate_changes_from_first_reference": 0,
+        "unobserved_candidate_blocks": 0,
+        "all_stable_reference_blocks_equal": true,
+        "windows": [
+          {
+            "label": "warm",
+            "x": -12320,
+            "z": -12000,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "water",
+            "x": -12320,
+            "z": -10656,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "plain",
+            "x": -12320,
+            "z": -8224,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "forest",
+            "x": -12320,
+            "z": -4832,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "mountain",
+            "x": -11744,
+            "z": 1120,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          }
+        ]
+      },
+      "runtime_counter_evidence": {
+        "cave_counts_exact_in_all_controls": true,
+        "forest_counts_equal_first_reference": false,
+        "forest_counts_equal_complete_observed_reference": false,
+        "forest_counts_are_observational_not_a_determinism_claim": true,
+        "native_height_cache_protocol_verified": true,
+        "candidate_height_oracle": {
+          "mismatches": 0,
+          "verified_calls": 10259,
+          "hits": 287,
+          "misses": 9972
+        },
+        "reference_height_oracles": [
+          {
+            "hits": 287,
+            "verified_calls": 10240,
+            "mismatches": 0,
+            "misses": 9953
+          },
+          {
+            "misses": 9953,
+            "hits": 287,
+            "verified_calls": 10240,
+            "mismatches": 0
+          },
+          {
+            "misses": 9953,
+            "hits": 287,
+            "verified_calls": 10240,
+            "mismatches": 0
+          }
+        ],
+        "forest_reference_snapshots": [
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 1150,
+            "TEMPERATE_kept": 979,
+            "TEMPERATE_opening_attempts": 12,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 1150,
+            "TEMPERATE_kept": 979,
+            "TEMPERATE_opening_attempts": 12,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 1150,
+            "TEMPERATE_kept": 979,
+            "TEMPERATE_opening_attempts": 12,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          }
+        ]
+      },
+      "forest_attempts": 1153,
+      "forest_telemetry": {
+        "CONIFER_attempts": 0,
+        "CONIFER_kept": 0,
+        "CONIFER_opening_attempts": 0,
+        "TEMPERATE_attempts": 1153,
+        "TEMPERATE_kept": 983,
+        "TEMPERATE_opening_attempts": 12,
+        "TROPICAL_attempts": 0,
+        "TROPICAL_kept": 0,
+        "TROPICAL_opening_attempts": 0
+      },
+      "cave_telemetry": {
+        "canyon_blocked": 7225,
+        "canyon_deep_blocked": 0,
+        "canyon_deep_forwarded": 39185,
+        "canyon_forwarded": 206584,
+        "canyon_near_surface_blocked": 5183,
+        "canyon_near_surface_forwarded": 45077,
+        "cave_blocked": 599570,
+        "cave_deep_blocked": 0,
+        "cave_deep_forwarded": 1254088,
+        "cave_forwarded": 1647359,
+        "cave_near_surface_blocked": 52943,
+        "cave_near_surface_forwarded": 63756,
+        "guard_instances": 745
+      },
+      "observer_sha256": "3528daf8a104a57db3a64a59b154f6e745a2c875948964be841b9b2328cc26f6",
+      "limitations": "Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.",
+      "input_sha256": {
+        "reference-repeat-2.json": "282c9d3a79479340d7d7e87788f2e9b81683594e874ddbb03f39a7322ae29b67",
+        "diagnostics.json": "bb46a4d43cdd1cb427416b482890848c005f46f2b1bdd3052f05176c9f211250",
+        "reference-repeat.json": "e218a8717c9250a39b826d638a296e43c59a0a2d99e79ab64e22ecf2800eec91",
+        "reference.json": "3e9b43a2b340053e3b11f511857ddf98df8984d480a3294137400d383662c179",
+        "candidate.json": "dd835c001127741b6ba3c8e7aae5063690ce5fab87afd1c1e7fff0a20420f748",
+        "candidate-reload.json": "7943ce6e9c92e60dda1bb84190fe5bcac61e8a42bdb3577556c964c8ecffefa0",
+        "coordinates.json": "5c356a4ac3fe1fac3080d88470ae2c6fe27c5e1eb6a21ab0e46245d8df967e5a"
+      }
+    },
+    "fresh-1337": {
+      "source_commit": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+      "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
+      "seed": 1337,
+      "scope": "fresh",
+      "actual_server_runs": 5,
+      "native_map_samples_per_version": 212992,
+      "stored_biome_columns_per_version": 1280,
+      "full_block_states_hashed_per_version": 491520,
+      "explicit_full_chunks_per_pass": 180,
+      "worldgen_maps_equal": true,
+      "full_sample_equal": true,
+      "saved_world_equal": true,
+      "reference_repeat_equal": true,
+      "reference_block_evidence": {
+        "sampled_blocks": 491520,
+        "reference_variable_blocks": 0,
+        "candidate_changes_from_first_reference": 0,
+        "unobserved_candidate_blocks": 0,
+        "all_stable_reference_blocks_equal": true,
+        "windows": [
+          {
+            "label": "forest",
+            "x": -12320,
+            "z": -11552,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "water",
+            "x": -12320,
+            "z": -8736,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "plain",
+            "x": -12320,
+            "z": -7904,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "mountain",
+            "x": -12320,
+            "z": -5024,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "warm",
+            "x": -11360,
+            "z": 5088,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          }
+        ]
+      },
+      "runtime_counter_evidence": {
+        "cave_counts_exact_in_all_controls": true,
+        "forest_counts_equal_first_reference": false,
+        "forest_counts_equal_complete_observed_reference": true,
+        "forest_counts_are_observational_not_a_determinism_claim": true,
+        "native_height_cache_protocol_verified": true,
+        "candidate_height_oracle": {
+          "mismatches": 0,
+          "verified_calls": 10805,
+          "hits": 266,
+          "misses": 10539
+        },
+        "reference_height_oracles": [
+          {
+            "mismatches": 0,
+            "misses": 10558,
+            "hits": 265,
+            "verified_calls": 10823
+          },
+          {
+            "verified_calls": 10813,
+            "hits": 263,
+            "misses": 10550,
+            "mismatches": 0
+          },
+          {
+            "hits": 266,
+            "verified_calls": 10805,
+            "mismatches": 0,
+            "misses": 10539
+          }
+        ],
+        "forest_reference_snapshots": [
+          {
+            "CONIFER_attempts": 815,
+            "CONIFER_kept": 723,
+            "CONIFER_opening_attempts": 48,
+            "TEMPERATE_attempts": 379,
+            "TEMPERATE_kept": 316,
+            "TEMPERATE_opening_attempts": 15,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 814,
+            "CONIFER_kept": 723,
+            "CONIFER_opening_attempts": 47,
+            "TEMPERATE_attempts": 379,
+            "TEMPERATE_kept": 319,
+            "TEMPERATE_opening_attempts": 15,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 815,
+            "CONIFER_kept": 723,
+            "CONIFER_opening_attempts": 48,
+            "TEMPERATE_attempts": 378,
+            "TEMPERATE_kept": 318,
+            "TEMPERATE_opening_attempts": 15,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          }
+        ]
+      },
+      "forest_attempts": 1193,
+      "forest_telemetry": {
+        "CONIFER_attempts": 815,
+        "CONIFER_kept": 723,
+        "CONIFER_opening_attempts": 48,
+        "TEMPERATE_attempts": 378,
+        "TEMPERATE_kept": 318,
+        "TEMPERATE_opening_attempts": 15,
+        "TROPICAL_attempts": 0,
+        "TROPICAL_kept": 0,
+        "TROPICAL_opening_attempts": 0
+      },
+      "cave_telemetry": {
+        "canyon_blocked": 44507,
+        "canyon_deep_blocked": 0,
+        "canyon_deep_forwarded": 79210,
+        "canyon_forwarded": 237641,
+        "canyon_near_surface_blocked": 2570,
+        "canyon_near_surface_forwarded": 83644,
+        "cave_blocked": 558426,
+        "cave_deep_blocked": 0,
+        "cave_deep_forwarded": 1257072,
+        "cave_forwarded": 2112022,
+        "cave_near_surface_blocked": 54534,
+        "cave_near_surface_forwarded": 87248,
+        "guard_instances": 745
+      },
+      "observer_sha256": "3528daf8a104a57db3a64a59b154f6e745a2c875948964be841b9b2328cc26f6",
+      "limitations": "Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.",
+      "input_sha256": {
+        "reference-repeat-2.json": "671d8655a79d6683b7bb14199564fe8659185eaea6f8b0140062064b604ebeb5",
+        "diagnostics.json": "66e223c1c236bd612c798ec6bdcce34dc698dce938772c7031aeff83ef39ef20",
+        "reference-repeat.json": "991f6a1b4971889a1cb868f70c17238985408af8a19dc67ac20035ddca8b6a11",
+        "reference.json": "b146f4e5cafb1e7e41cd16652ac87d4991828a10833f4c9d32d2a5ec4da1e562",
+        "candidate.json": "957d19e639ff377b3e9ad59755164df0744a542819cc178101a87e79eddf0fe7",
+        "candidate-reload.json": "a50d9f543f7bbd368f819bd68388c6b293f310a524a44209dfe5a7228f24ea1e",
+        "coordinates.json": "5b9c30da39b0641f40e3a6e88335a0b41c3b1689febc60065c815672c481eb70"
+      }
+    },
+    "fresh--20261111": {
+      "source_commit": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+      "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
+      "seed": -20261111,
+      "scope": "fresh",
+      "actual_server_runs": 5,
+      "native_map_samples_per_version": 212992,
+      "stored_biome_columns_per_version": 1280,
+      "full_block_states_hashed_per_version": 491520,
+      "explicit_full_chunks_per_pass": 180,
+      "worldgen_maps_equal": true,
+      "full_sample_equal": true,
+      "saved_world_equal": true,
+      "reference_repeat_equal": true,
+      "reference_block_evidence": {
+        "sampled_blocks": 491520,
+        "reference_variable_blocks": 0,
+        "candidate_changes_from_first_reference": 0,
+        "unobserved_candidate_blocks": 0,
+        "all_stable_reference_blocks_equal": true,
+        "windows": [
+          {
+            "label": "water",
+            "x": -12320,
+            "z": -11872,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "warm",
+            "x": -12320,
+            "z": -8224,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "forest",
+            "x": -12320,
+            "z": -7520,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "mountain",
+            "x": -12256,
+            "z": -3872,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          },
+          {
+            "label": "plain",
+            "x": -11936,
+            "z": 12064,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          }
+        ]
+      },
+      "runtime_counter_evidence": {
+        "cave_counts_exact_in_all_controls": true,
+        "forest_counts_equal_first_reference": false,
+        "forest_counts_equal_complete_observed_reference": false,
+        "forest_counts_are_observational_not_a_determinism_claim": true,
+        "native_height_cache_protocol_verified": true,
+        "candidate_height_oracle": {
+          "verified_calls": 9145,
+          "hits": 179,
+          "misses": 8966,
+          "mismatches": 0
+        },
+        "reference_height_oracles": [
+          {
+            "misses": 8962,
+            "mismatches": 0,
+            "verified_calls": 9138,
+            "hits": 176
+          },
+          {
+            "hits": 176,
+            "misses": 8915,
+            "mismatches": 0,
+            "verified_calls": 9091
+          },
+          {
+            "verified_calls": 9107,
+            "hits": 183,
+            "misses": 8924,
+            "mismatches": 0
+          }
+        ],
+        "forest_reference_snapshots": [
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 838,
+            "TEMPERATE_kept": 727,
+            "TEMPERATE_opening_attempts": 63,
+            "TROPICAL_attempts": 183,
+            "TROPICAL_kept": 158,
+            "TROPICAL_opening_attempts": 5
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 833,
+            "TEMPERATE_kept": 722,
+            "TEMPERATE_opening_attempts": 63,
+            "TROPICAL_attempts": 183,
+            "TROPICAL_kept": 158,
+            "TROPICAL_opening_attempts": 5
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 834,
+            "TEMPERATE_kept": 722,
+            "TEMPERATE_opening_attempts": 63,
+            "TROPICAL_attempts": 183,
+            "TROPICAL_kept": 158,
+            "TROPICAL_opening_attempts": 5
+          }
+        ]
+      },
+      "forest_attempts": 1022,
+      "forest_telemetry": {
+        "CONIFER_attempts": 0,
+        "CONIFER_kept": 0,
+        "CONIFER_opening_attempts": 0,
+        "TEMPERATE_attempts": 839,
+        "TEMPERATE_kept": 728,
+        "TEMPERATE_opening_attempts": 63,
+        "TROPICAL_attempts": 183,
+        "TROPICAL_kept": 158,
+        "TROPICAL_opening_attempts": 5
+      },
+      "cave_telemetry": {
+        "canyon_blocked": 44971,
+        "canyon_deep_blocked": 0,
+        "canyon_deep_forwarded": 164472,
+        "canyon_forwarded": 294400,
+        "canyon_near_surface_blocked": 33220,
+        "canyon_near_surface_forwarded": 33142,
+        "cave_blocked": 307611,
+        "cave_deep_blocked": 0,
+        "cave_deep_forwarded": 974193,
+        "cave_forwarded": 1549133,
+        "cave_near_surface_blocked": 37162,
+        "cave_near_surface_forwarded": 50912,
+        "guard_instances": 745
+      },
+      "observer_sha256": "3528daf8a104a57db3a64a59b154f6e745a2c875948964be841b9b2328cc26f6",
+      "limitations": "Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.",
+      "input_sha256": {
+        "reference-repeat-2.json": "1d3b707a4ac6f008854c8f71740717cd04d6d1b5428bbc743c5a228698772f11",
+        "diagnostics.json": "f9c41e45d4552956e5a056f9e23b1a6abf2dea65bf940c0dbdcf9b559d2a0cc8",
+        "reference-repeat.json": "d0d338576561f10b71ef419c0278823b1d0156c57ddb885b07c079ffb77fff48",
+        "reference.json": "6ddab9eb3d268c9f3975892febf871607cd6fc7b6ed5935075245232cc960ba8",
+        "candidate.json": "8e5a4aca1001058a7c96e02d7824b7a6c254f0a009e0c4b437af673cf789c911",
+        "candidate-reload.json": "2e87c335bd41ce8b9271c12231627d504c1ec2c0245271594e7328c9233ac495",
+        "coordinates.json": "e7899ea31268c13d67356e72858f44f12efc2463fb51c98df8f90a9d6c4fd443"
+      }
+    },
+    "normal-42": {
+      "source_commit": "c5deb59717df0677c700d6f6f524cc2e3f17a0cf",
+      "reference_commit": "8bb647170ed20390fc8ae3b9e05017fbd921aa61",
+      "seed": 42,
+      "scope": "normal",
+      "actual_server_runs": 5,
+      "native_map_samples_per_version": 0,
+      "stored_biome_columns_per_version": 256,
+      "full_block_states_hashed_per_version": 98304,
+      "explicit_full_chunks_per_pass": 36,
+      "worldgen_maps_equal": true,
+      "full_sample_equal": true,
+      "saved_world_equal": true,
+      "reference_repeat_equal": true,
+      "reference_block_evidence": {
+        "sampled_blocks": 98304,
+        "reference_variable_blocks": 0,
+        "candidate_changes_from_first_reference": 0,
+        "unobserved_candidate_blocks": 0,
+        "all_stable_reference_blocks_equal": true,
+        "windows": [
+          {
+            "label": "normal",
+            "x": 8192,
+            "z": 8192,
+            "sampled_blocks": 98304,
+            "reference_variable_blocks": 0,
+            "candidate_changes_from_first_reference": 0,
+            "unobserved_candidate_blocks": 0,
+            "examples": []
+          }
+        ]
+      },
+      "runtime_counter_evidence": {
+        "cave_counts_exact_in_all_controls": true,
+        "forest_counts_equal_first_reference": true,
+        "forest_counts_equal_complete_observed_reference": true,
+        "forest_counts_are_observational_not_a_determinism_claim": true,
+        "native_height_cache_protocol_verified": true,
+        "candidate_height_oracle": {
+          "misses": 0,
+          "mismatches": 0,
+          "verified_calls": 0,
+          "hits": 0
+        },
+        "reference_height_oracles": [
+          {
+            "hits": 0,
+            "misses": 0,
+            "mismatches": 0,
+            "verified_calls": 0
+          },
+          {
+            "verified_calls": 0,
+            "hits": 0,
+            "misses": 0,
+            "mismatches": 0
+          },
+          {
+            "mismatches": 0,
+            "misses": 0,
+            "hits": 0,
+            "verified_calls": 0
+          }
+        ],
+        "forest_reference_snapshots": [
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 0,
+            "TEMPERATE_kept": 0,
+            "TEMPERATE_opening_attempts": 0,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 0,
+            "TEMPERATE_kept": 0,
+            "TEMPERATE_opening_attempts": 0,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          },
+          {
+            "CONIFER_attempts": 0,
+            "CONIFER_kept": 0,
+            "CONIFER_opening_attempts": 0,
+            "TEMPERATE_attempts": 0,
+            "TEMPERATE_kept": 0,
+            "TEMPERATE_opening_attempts": 0,
+            "TROPICAL_attempts": 0,
+            "TROPICAL_kept": 0,
+            "TROPICAL_opening_attempts": 0
+          }
+        ]
+      },
+      "forest_attempts": 0,
+      "forest_telemetry": {
+        "CONIFER_attempts": 0,
+        "CONIFER_kept": 0,
+        "CONIFER_opening_attempts": 0,
+        "TEMPERATE_attempts": 0,
+        "TEMPERATE_kept": 0,
+        "TEMPERATE_opening_attempts": 0,
+        "TROPICAL_attempts": 0,
+        "TROPICAL_kept": 0,
+        "TROPICAL_opening_attempts": 0
+      },
+      "cave_telemetry": {
+        "canyon_blocked": 0,
+        "canyon_deep_blocked": 0,
+        "canyon_deep_forwarded": 0,
+        "canyon_forwarded": 0,
+        "canyon_near_surface_blocked": 0,
+        "canyon_near_surface_forwarded": 0,
+        "cave_blocked": 0,
+        "cave_deep_blocked": 0,
+        "cave_deep_forwarded": 0,
+        "cave_forwarded": 0,
+        "cave_near_surface_blocked": 0,
+        "cave_near_surface_forwarded": 0,
+        "guard_instances": 0
+      },
+      "observer_sha256": "3528daf8a104a57db3a64a59b154f6e745a2c875948964be841b9b2328cc26f6",
+      "limitations": "Fixed maps and sampled FULL columns. Exact candidate reload; any nonidentical initial block must be observed at that coordinate in an unchanged reference. Not exhaustive, no client/performance claim.",
+      "input_sha256": {
+        "reference-repeat-2.json": "768a713383c7f5d295ec6eaf1958253ae81144c35f92ce4a20a6573964b28b31",
+        "diagnostics.json": "465beffdce8813fdb6ab84e45aae4345f233015dac50d2d5527b594c53b2916f",
+        "reference-repeat.json": "c821cbb55d5d03248dd1ce6c844898e196009bc3162423d2637b70e1016ac8ba",
+        "reference.json": "77982679c740ae6fb0e6c3b8cbf9b9af8c7e1f7d5f84cf41ae67105b94607c1a",
+        "candidate.json": "4484dbc916a542dbe8d8361c40a2f3181557692604e35784aee358e937891184",
+        "candidate-reload.json": "82b1f385501e13f7f9a5dcdf37cff3910e7fa63567672484d483eb8c8ca9625d",
+        "coordinates.json": "633f1dee7d06981430f285ba6434f6a3e52b5db91fb875a5548df9c1bc9b0b00"
+      }
+    }
+  },
+  "structure_and_topology_summary": {
+    "fg-42": {
+      "full_chunks_explicitly_requested": 544,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 13,
+      "villages_examined": 2,
+      "structures_examined": 4,
+      "structure_pieces_examined": 267,
+      "village_rigid_pieces_checked": 82,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 1,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Village [-520, 464]: suspended-piece candidates=0, locally blocked door candidates=1",
+        "Not located in bounded search: [desert_pyramid]"
+      ]
+    },
+    "vanilla-42": {
+      "full_chunks_explicitly_requested": 640,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 2,
+      "isolated_single_blocks": 2,
+      "boundary_unknown_components": 18,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 409,
+      "village_rigid_pieces_checked": 110,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 3,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "mountain-2: 2 sky-exposed detached natural components; inspect coordinates, no automatic deletion",
+        "Village [41, -19]: suspended-piece candidates=0, locally blocked door candidates=2",
+        "Village [-504, 492]: suspended-piece candidates=0, locally blocked door candidates=1"
+      ]
+    },
+    "fg-1337": {
+      "full_chunks_explicitly_requested": 560,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 8,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 363,
+      "village_rigid_pieces_checked": 82,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 0,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": []
+    },
+    "vanilla-1337": {
+      "full_chunks_explicitly_requested": 621,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 1,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 10,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 440,
+      "village_rigid_pieces_checked": 125,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 0,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "mountain-2: 1 sky-exposed detached natural components; inspect coordinates, no automatic deletion"
+      ]
+    },
+    "fg--20261111": {
+      "full_chunks_explicitly_requested": 669,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 0,
+      "villages_examined": 2,
+      "structures_examined": 4,
+      "structure_pieces_examined": 490,
+      "village_rigid_pieces_checked": 143,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 0,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Not located in bounded search: [desert_pyramid]"
+      ]
+    },
+    "vanilla--20261111": {
+      "full_chunks_explicitly_requested": 599,
+      "terrain_block_positions_scanned": 4734976,
+      "detached_sky_terrain_components": 0,
+      "isolated_single_blocks": 0,
+      "boundary_unknown_components": 8,
+      "villages_examined": 2,
+      "structures_examined": 5,
+      "structure_pieces_examined": 368,
+      "village_rigid_pieces_checked": 54,
+      "village_suspended_piece_candidates": 0,
+      "village_door_exit_candidates": 1,
+      "native_structures_equal": 52,
+      "native_structure_sets_equal": 21,
+      "candidate_positions_compared": 21780,
+      "warnings": [
+        "Village [22, 17]: suspended-piece candidates=0, locally blocked door candidates=1"
+      ]
+    }
+  },
+  "rejected_forest_optimization": {
+    "source_commit": "578b6456f2f5ce9cc665642406f0f05a2bfc5d56",
+    "run_id": 43162819040,
+    "seed": 42,
+    "changed_sampled_blocks": 9,
+    "reason": "Unobserved tree/leaf-litter states; no weakening of the block gate. Restore the exact published forest runtime.",
+    "raw_evidence": "research/rejected-candidates/technical-world-fresh-42-578b645.json.gz"
+  },
+  "rejected_cave_optimization": {
+    "source_commit": "845af54c8c7d943036e741b9d931311759fe9dc8",
+    "run_id": 43166487075,
+    "seed": 1337,
+    "changed_sampled_blocks": 391,
+    "reason": "Unexplained sculk-related FULL differences against three stable controls. Root cause is not proven; do not ship the unvalidated runtime optimization.",
+    "raw_evidence": "research/rejected-candidates/technical-world-fresh-1337-845af54.json.gz"
+  },
+  "limits": [
+    "Fixed seeds and sampled FULL columns; not a proof for all worlds",
+    "Native structure warnings retained; no villager navigation simulation",
+    "No client/shader/modpack/DH/C2ME test or measured FPS/speedup claim",
+    "Maintenance of compiler/build/testing, not new runtime terrain or biome behavior",
+    "Both runtime optimization experiments rejected; no claim to have fixed native sculk randomness"
+  ]
+}
