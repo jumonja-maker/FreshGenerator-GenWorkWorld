@@ -9,6 +9,12 @@ public final class WorldgenCatalog {
  public static final String NORMAL_TAG="data/minecraft/tags/worldgen/world_preset/normal.json";
  private WorldgenCatalog() { }
  public static Map<String,JsonElement> compile(VanillaAssets vanilla)throws IOException {
+  Map<String,JsonElement> out=new TreeMap<>(compileBeforeHydrology(vanilla));
+  HydrologyCompiler.apply(out);
+  return Collections.unmodifiableMap(out);
+ }
+ /** Frozen 0.3.6 output for comparison with the lowland hydrology layer. */
+ public static Map<String,JsonElement> compileBeforeHydrology(VanillaAssets vanilla)throws IOException {
   Map<String,JsonElement> out=new TreeMap<>(compileBeforeMountainDetails(vanilla));
   MountainSurfaceDetailCompiler.apply(out);
   return Collections.unmodifiableMap(out);

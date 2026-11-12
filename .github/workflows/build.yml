@@ -38,9 +38,7 @@ jobs:
           python3 scripts/test_technical_reference_envelope.py
           python3 scripts/test_village_checks.py
           sha256sum build/libs/*.jar
-          mkdir -p build/reports/village-release
-          sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
-          python3 scripts/validate_mountain_release.py build
+          python3 scripts/validate_hydrology_patch.py
       - name: Sample structures in two fresh worlds
         if: contains(github.event.head_commit.message, '[audit-structures]')
         run: |

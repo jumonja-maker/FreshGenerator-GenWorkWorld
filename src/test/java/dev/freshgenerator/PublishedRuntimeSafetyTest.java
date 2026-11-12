@@ -23,7 +23,9 @@ class PublishedRuntimeSafetyTest {
    Set<String> expected=new TreeSet<>(old);
    for(String p:List.of("village/VillageTerrainModel","village/VillageTerrainModel$Site","village/VillageTerrainModel$Column",
        "village/VillageTerrainPlan","village/VillageNoiseAccess","mixin/NoiseChunkVillageMixin","mixin/VillageTerrainMixin",
-       "village/VillageLakeGuard","mixin/VillageLakeMixin"))expected.add("dev/freshgenerator/"+p+".class");
+       "village/VillageLakeGuard","mixin/VillageLakeMixin","core/DrainageModel","core/DrainageModel$Field",
+       "core/DrainageModel$Tile","core/DrainageModel$Grid","hydrology/DrainageDensity",
+       "hydrology/DrainageDensity$Sampler","hydrology/HydrologyInitializer"))expected.add("dev/freshgenerator/"+p+".class");
    assertEquals(expected,actual);
   }
  }

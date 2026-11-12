@@ -5,7 +5,7 @@
   "name": "FreshGenerator",
   "description": "One coherent world: envelope-aware biomes and shared snow, grass and rock transitions.",
   "environment": "*",
-  "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator"]},
+  "entrypoints": {"main": ["dev.freshgenerator.FreshGenerator", "dev.freshgenerator.hydrology.HydrologyInitializer"]},
   "mixins": ["freshgenerator.mixins.json"],
   "authors": ["FreshGenerator contributors"],
   "license": "MIT",
