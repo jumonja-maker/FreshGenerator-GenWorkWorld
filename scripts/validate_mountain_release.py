@@ -39,7 +39,14 @@ def package_check(path):
         require(len(names)==len(set(names)),'Duplicate ZIP entry')
         require(new.testzip() is None,'Broken game JAR')
         old_names=set(old.namelist());new_names=set(names)
-        require(new_names==old_names|ADDED,'Unapproved JAR addition/removal')
+        # ZIP includes the directory entry for the newly introduced detail/
+        # namespace. Permit only that directory and its four named resources.
+        new_directories={name for name in new_names-old_names if name.endswith('/')}
+        require(new_directories<={ROOT+'coherent/detail/'},
+                'Unexpected generated resource directory: '+str(sorted(new_directories)))
+        require(new_names==old_names|ADDED|new_directories,
+                'Unapproved JAR entries: '+str(sorted(new_names-(old_names|ADDED|new_directories)))
+                +' deleted: '+str(sorted(old_names-new_names)))
         for name in new_names:
             require(not name.startswith(('net/minecraft/','dev/freshgenerator/audit/',
                     'dev/freshgenerator/pack/','dev/freshgenerator/smoke/')),
