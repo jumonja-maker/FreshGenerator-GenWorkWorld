@@ -1,0 +1,74 @@
+name: Prepare isolated native hydrology debugging runtime
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-local-runtime.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3a9ad243c76cae7e1e6c4bb444b3344639f68878
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Build exact source and collect only compile dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d" review-runtime
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          cat >> build.gradle <<'GRADLE'
+          tasks.register('exportReviewClasspath') {
+            dependsOn testClasses, hydrologyAuditJar
+            doLast {
+              def files = (sourceSets.test.runtimeClasspath.files + sourceSets.smoke.runtimeClasspath.files).findAll { it.exists() }.unique()
+              def root = file('review-runtime/compile')
+              root.mkdirs()
+              def paths = []
+              files.eachWithIndex { source, index ->
+                def name = String.format('%03d-', index) + source.name
+                if (source.isDirectory()) copy { from source; into new File(root, name) }
+                else copy { from source; into root; rename { name } }
+                paths.add('compile/' + name)
+              }
+              file('review-runtime/classpath.txt').text = paths.join('\n') + '\n'
+            }
+          }
+          GRADLE
+          gradle --no-daemon --console=plain build hydrologyAuditJar exportReviewClasspath
+      - name: Bootstrap a genuine packaged server and keep its dependency cache
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/hydrology_world_audit.sh')
+          text=p.read_text()
+          before="trap 'rm -rf -- \"$scratch\"' EXIT"
+          after="trap 'mkdir -p \"$root/review-runtime/server\"; cp -a \"$scratch/.\" \"$root/review-runtime/server/\"; rm -rf -- \"$scratch\"' EXIT"
+          assert text.count(before)==1
+          p.write_text(text.replace(before,after))
+          PY
+          FG_HYDROLOGY_SKIP_BUILD=true FG_HYDROLOGY_RUNS=candidate FG_HYDROLOGY_PARTIAL=true bash scripts/hydrology_world_audit.sh 42
+          rm -rf review-runtime/server/world-* review-runtime/server/logs review-runtime/server/crash-reports
+          mkdir -p review-runtime/assets
+          cp build/hydrology-audit/*.jar review-runtime/assets/
+          cp -a "$JAVA_HOME" review-runtime/jdk
+          cp build/libs/*.jar review-runtime/assets/
+          cp dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar review-runtime/assets/
+          git rev-parse HEAD > review-runtime/source-commit.txt
+          du -sh review-runtime/*
+          tar -czf native-hydrology-runtime.tar.gz review-runtime
+          sha256sum native-hydrology-runtime.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-hydrology-runtime
+          path: native-hydrology-runtime.tar.gz
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
