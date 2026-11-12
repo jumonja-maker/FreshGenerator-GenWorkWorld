@@ -1,0 +1,36 @@
+name: Export concurrent hydrology source snapshot
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-reconcile-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6cd5557eb7cbb909f7541ef3659cc7dd708bcd54
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Archive exact concurrent source and ancestry
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz HEAD > hydrology-concurrent-source.tar.gz
+          git diff 3a9ad243c76cae7e1e6c4bb444b3344639f68878 HEAD > hydrology-concurrent.patch
+          git log -3 --format=fuller > hydrology-concurrent-commits.txt
+          git rev-parse HEAD HEAD^{tree} > hydrology-concurrent-refs.txt
+          git bundle create hydrology-concurrent.bundle HEAD ^3a9ad243c76cae7e1e6c4bb444b3344639f68878
+      - uses: actions/upload-artifact@v4
+        with:
+          name: concurrent-hydrology-source
+          path: |
+            hydrology-concurrent-source.tar.gz
+            hydrology-concurrent.patch
+            hydrology-concurrent-commits.txt
+            hydrology-concurrent-refs.txt
+            hydrology-concurrent.bundle
+          retention-days: 7
+          if-no-files-found: error
