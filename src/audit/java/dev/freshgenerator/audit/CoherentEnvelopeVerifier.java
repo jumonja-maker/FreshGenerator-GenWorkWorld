@@ -25,6 +25,60 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         return server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(
                 ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+name))).value();
     }
+    /** Read-only probe of original 3-D cave/rock density near true alpine peaks. */
+    private static JsonObject nativeMountainStudy(MinecraftServer server,RandomState state,
+                                                   DensityFunction height,DensityFunction nativeBody) {
+        var registry=server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION);
+        var mask=registry.getOrThrow(ResourceKey.create(Registries.DENSITY_FUNCTION,
+             Identifier.parse("freshgenerator:highlands_v2/mountain_mask"))).value();
+        record Candidate(int x,int z,float h,float m) {}
+        List<Candidate> peaks=new ArrayList<>();
+        for(int x=-8192;x<=8192;x+=384)for(int z=-8192;z<=8192;z+=384) {
+            float h=state.sampleBlockValueUncached(height,x,0,z);
+            if(h<160)continue;
+            float m=state.sampleBlockValueUncached(mask,x,0,z);
+            if(m>.10f)peaks.add(new Candidate(x,z,h,m));
+        }
+        peaks.sort(Comparator.comparingDouble((Candidate a)->a.h()).reversed());
+        List<Candidate> selected=new ArrayList<>();
+        for(Candidate peak:peaks) {
+            if(selected.stream().noneMatch(a->Math.abs(a.x()-peak.x())+Math.abs(a.z()-peak.z())<512))
+               selected.add(peak);
+            if(selected.size()>=48)break;
+        }
+        double min=Double.POSITIVE_INFINITY,max=Double.NEGATIVE_INFINITY,sum=0;
+        int samples=0,clipped=0,variation=0,positive=0,negative=0;
+        double maxVerticalDelta=0,maxHorizontalDelta=0;
+        for(Candidate peak:selected)for(int[] delta:new int[][]{{0,0},{8,0},{0,8}}) {
+            int x=peak.x()+delta[0],z=peak.z()+delta[1];
+            float h=state.sampleBlockValueUncached(height,x,0,z);
+            int y=(int)Math.floor(h);
+            double a=state.sampleBlockValueUncached(nativeBody,x,y,z);
+            double b=state.sampleBlockValueUncached(nativeBody,x,y-3,z);
+            double c=state.sampleBlockValueUncached(nativeBody,x,y+3,z);
+            double d=state.sampleBlockValueUncached(nativeBody,x+3,y,z);
+            min=Math.min(min,a);max=Math.max(max,a);sum+=a;samples++;
+            if(Math.abs(a)>=.18)clipped++;
+            if(a>=0)positive++;else negative++;
+            if(Math.abs(a-b)>1e-4||Math.abs(a-c)>1e-4)variation++;
+            maxVerticalDelta=Math.max(maxVerticalDelta,Math.max(Math.abs(a-b),Math.abs(a-c)));
+            maxHorizontalDelta=Math.max(maxHorizontalDelta,Math.abs(a-d));
+        }
+        JsonObject out=new JsonObject();
+        out.addProperty("sampled_peak_regions",selected.size());
+        out.addProperty("surface_samples",samples);
+        out.addProperty("min_native_density",samples==0?0:min);
+        out.addProperty("max_native_density",samples==0?0:max);
+        out.addProperty("mean_native_density",samples==0?0:sum/samples);
+        out.addProperty("abs_gt_point18",clipped);
+        out.addProperty("positive",positive);out.addProperty("negative",negative);
+        out.addProperty("vertical_variation",variation);
+        out.addProperty("max_3block_vertical_change",maxVerticalDelta);
+        out.addProperty("max_3block_horizontal_change",maxHorizontalDelta);
+        System.out.println("NATIVE_MOUNTAIN_SURFACE_DENSITY "+out);
+        return out;
+    }
+
     private static void verify(MinecraftServer server) throws Exception {
         var level=server.overworld();
         var generator=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();
@@ -64,6 +118,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         r.addProperty("monotone_exterior_density_samples",monotone);r.addProperty("protected_roof_samples",roofs);
         r.addProperty("deep_cave_weight_samples",deep);r.addProperty("native_deep_cavity_samples",deepCavities);
         r.addProperty("max_sampled_height_step_per_block",maxNeighbourStep);
+        r.add("original_3d_alpine_probe",nativeMountainStudy(server,state,height,nativeCaves));
         r.addProperty("scope","native density sampling; FULL topology and structures are audited separately; not a screenshot reproduction");
         Files.writeString(Path.of("freshgenerator-envelope.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r)+"\n");
         System.out.println("FRESHGENERATOR_ENVELOPE_PASS "+r);
