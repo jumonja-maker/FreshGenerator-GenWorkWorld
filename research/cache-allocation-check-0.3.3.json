@@ -1,11 +1,13 @@
 {
-  "scope": "Standalone synthetic allocation and cache-trace checks, not Minecraft generation, not an FPS benchmark",
+  "release_status": "REJECTED: experimental cache is test-only and is NOT used by the game JAR",
+  "rejection_run_id": 43162819040,
+  "scope": "Standalone synthetic allocation and cache-trace checks, not Minecraft generation, not an FPS benchmark, not release improvements",
   "java": "OpenJDK 21.0.12.1 Debian, 64-bit Server VM",
   "game_target_java": 25,
   "tasks_per_allocation_measurement": 2048,
   "allocation_unit": "bytes allocated on the measuring thread per fresh cache, includes intermediate growth arrays",
   "old": "HashMap<Long,Float>, deterministic mixed 64-bit keys, finite heights",
-  "new": "ColumnFloatCache(1024), initial 32 slots, grow when half full",
+  "new": "Rejected ColumnFloatCache(1024) experiment, initial 32 slots, grow when half full",
   "allocation_observations": [
     {"entries": 0, "old_bytes": 48, "new_bytes": 40},
     {"entries": 8, "old_bytes": 704, "new_bytes": 600},
@@ -19,5 +21,5 @@
   "oracle_synthetic_hits": 32892,
   "oracle_synthetic_misses": 217108,
   "mismatches": 0,
-  "limitations": ["Not retained heap measurement", "Not measured on the user's modpack or PC", "Does not measure FPS or real chunk-generation latency", "Server validation uses Java 25 separately"]
+  "limitations": ["Experimental code rejected and excluded from the game JAR", "Not retained heap measurement", "Not measured on the user's modpack or PC", "Does not measure FPS or real chunk-generation latency", "Server validation uses Java 25 separately"]
 }

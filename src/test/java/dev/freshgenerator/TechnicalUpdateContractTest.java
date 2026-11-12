@@ -45,11 +45,18 @@ class TechnicalUpdateContractTest {
             }
         }assertEquals(344,count);assertEquals(count,p.size());
     }
-    @Test void onlyPureHeightsUseReplacementCache()throws Exception {
-        String source=Files.readString(Path.of("src/main/java/dev/freshgenerator/forest/ForestEnvironment.java"));
-        assertTrue(source.contains("new ColumnFloatCache(1024)"));
-        // Site samples include native biome queries: retain their previous lookup sequence.
-        assertTrue(source.contains("if(sites.size()>=256)sites.clear()"));
-        assertFalse(source.contains("heights.clear()"));assertFalse(source.contains("new int[][]"));
+    @Test void rejectedCacheDoesNotRemainInProductionSources()throws Exception {
+        assertFalse(Files.exists(Path.of("src/core/java/dev/freshgenerator/core/ColumnFloatCache.java")));
+        assertTrue(Files.exists(Path.of("src/test/java/dev/freshgenerator/core/ColumnFloatCache.java")));
+        for(String root:List.of("src/core/java","src/main/java"))try(var files=Files.walk(Path.of(root))){
+            for(var path:files.filter(p->p.toString().endsWith(".java")).toList())
+                assertFalse(Files.readString(path).contains("ColumnFloatCache"),path.toString());
+        }
+    }
+    @Test void forestAdapterIsTheExactPublishedSource()throws Exception {
+        byte[] source=Files.readAllBytes(Path.of("src/main/java/dev/freshgenerator/forest/ForestEnvironment.java"));
+        var digest=java.security.MessageDigest.getInstance("SHA-1");
+        digest.update(("blob "+source.length+"\0").getBytes(StandardCharsets.UTF_8));digest.update(source);
+        assertEquals("bcc99d4a68abdfa1f6180387bba9853a0ecd1dc1",HexFormat.of().formatHex(digest.digest()));
     }
 }
