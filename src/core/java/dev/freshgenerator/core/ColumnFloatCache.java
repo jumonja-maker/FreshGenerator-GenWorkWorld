@@ -6,11 +6,13 @@ import java.util.Arrays;
  * A new key at capacity starts the same logical empty generation as the old map. Epoch
  * stamps make that operation O(1) without clearing an array or allocating boxed entries.
  * Crucially, an earlier collision must NOT evict a value and reorder native sampling.
- * Backing arrays are lazy: unsupported forest features pay no fixed buffer allocation.
+ * Backing arrays start at 32 slots and grow only when half full; sparse forest tasks
+ * do not allocate the full 2048-slot buffer. Unsupported features allocate no arrays.
  * Not shared across generation tasks, threads or worlds. NaN is the miss sentinel.
  */
 public final class ColumnFloatCache {
-    private final int capacity, mask;
+    private final int capacity;
+    private int mask;
     private long[] keys;
     private float[] values;
     private int[] epochs;
@@ -20,7 +22,6 @@ public final class ColumnFloatCache {
         if (capacity < 4 || capacity > (1 << 20) || (capacity & (capacity - 1)) != 0)
             throw new IllegalArgumentException("Capacity must be a power of two from 4 through 1048576");
         this.capacity = capacity;
-        mask = capacity * 2 - 1;
     }
 
     public float get(long key) {
@@ -31,11 +32,7 @@ public final class ColumnFloatCache {
 
     public void put(long key, float value) {
         if (!Float.isFinite(value)) throw new IllegalArgumentException("Column sample must be finite");
-        if (keys == null) {
-            keys = new long[mask + 1];
-            values = new float[mask + 1];
-            epochs = new int[mask + 1];
-        }
+        if (keys == null) allocate(Math.min(capacity * 2, 32));
         int slot = find(key);
         if (epochs[slot] == epoch) {
             values[slot] = value;
@@ -48,6 +45,9 @@ public final class ColumnFloatCache {
             } else epoch++;
             size = 0;
             slot = find(key);
+        } else if ((size + 1) * 2 > keys.length) {
+            grow();
+            slot = find(key);
         }
         keys[slot] = key;
         values[slot] = value;
@@ -57,6 +57,27 @@ public final class ColumnFloatCache {
 
     public int capacity() { return capacity; }
 
+    private void allocate(int length) {
+        keys = new long[length];
+        values = new float[length];
+        epochs = new int[length];
+        mask = length - 1;
+    }
+
+    private void grow() {
+        long[] previousKeys = keys;
+        float[] previousValues = values;
+        int[] previousEpochs = epochs;
+        allocate(previousKeys.length * 2);
+        // Rehash LIVE entries only. Growing must not create a miss or call a sampler.
+        for (int i = 0; i < previousKeys.length; i++) if (previousEpochs[i] == epoch) {
+            int slot = find(previousKeys[i]);
+            keys[slot] = previousKeys[i];
+            values[slot] = previousValues[i];
+            epochs[slot] = epoch;
+        }
+    }
+
     private int find(long key) {
         long h = key;
         h ^= h >>> 33;
@@ -65,7 +86,6 @@ public final class ColumnFloatCache {
         h *= 0xc4ceb9fe1a85ec53L;
         h ^= h >>> 33;
         int slot = (int)h & mask;
-        // At most half the table is live, so an empty slot always exists.
         while (epochs[slot] == epoch && keys[slot] != key) slot = (slot + 1) & mask;
         return slot;
     }
