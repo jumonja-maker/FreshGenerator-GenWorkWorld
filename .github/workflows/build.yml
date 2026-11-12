@@ -68,7 +68,7 @@ jobs:
           sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
           gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
           sha256sum --check build/reports/village-release/reproducible.sha256
-          python3 scripts/validate_village_release.py build
+          python3 scripts/validate_mountain_release.py build
       - name: Keep exact package and test evidence
         id: evidence
         if: always()
@@ -174,7 +174,7 @@ jobs:
           EVIDENCE_JOBS: ${{ toJSON(needs) }}
         run: python3 scripts/ci_evidence.py get ci-evidence
       - name: Independently validate raw reports and prepare release
-        run: python3 scripts/validate_village_release.py publish
+        run: python3 scripts/validate_mountain_release.py publish
       - name: Publish without overwriting a newer main
         run: |
           set -euo pipefail
@@ -183,5 +183,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
-          git commit -m 'build: publish verified village terrain protection 0.3.4 [skip ci]'
+          git commit -m 'build: publish verified bounded alpine surface detail 0.3.6 [skip ci]'
           git push origin HEAD:main
