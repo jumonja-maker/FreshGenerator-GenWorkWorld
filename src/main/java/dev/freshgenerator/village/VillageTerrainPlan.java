@@ -34,11 +34,17 @@ public final class VillageTerrainPlan {
                                              NoiseGeneratorSettings settings, RandomState state) {
         if(region==null || !manager.shouldGenerateStructures())return EMPTY;
         ChunkPos origin=target.getPos();
+        ChunkPos metadataOrigin=region.getCenter();
+        if(Math.abs((long)origin.x()-metadataOrigin.x())>1 || Math.abs((long)origin.z()-metadataOrigin.z())>1)
+            throw new IllegalArgumentException("Village target outside the current terrain/lake footprint");
         var registry=manager.registryAccess().lookupOrThrow(Registries.STRUCTURE);
         Set<StructureStart> seen=Collections.newSetFromMap(new IdentityHashMap<>());
         List<VillageTerrainModel.Site> sites=new ArrayList<>();
-        // The same already available radius used by native carvers. create=false never upgrades chunks.
-        for(int cx=origin.x()-8;cx<=origin.x()+8;cx++)for(int cz=origin.z()-8;cz<=origin.z()+8;cz++) {
+        // WorldGenRegion bounds are relative to ITS center, not the chunk a lake overlaps.
+        // In 26.3 create=false still throws outside the prepared dependency radius.
+        // A native lake touches center + [-8,22] blocks. With the 96-block village
+        // horizon and 24-block apron, all contributing starts are inside center +/-8.
+        for(int cx=metadataOrigin.x()-8;cx<=metadataOrigin.x()+8;cx++)for(int cz=metadataOrigin.z()-8;cz<=metadataOrigin.z()+8;cz++) {
             ChunkAccess chunk=region.getChunk(cx,cz,ChunkStatus.STRUCTURE_STARTS,false);
             if(chunk==null)continue;
             for(StructureStart start:chunk.getAllStarts().values()) {
