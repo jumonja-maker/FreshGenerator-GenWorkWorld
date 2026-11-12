@@ -35,11 +35,10 @@ public final class CaveCarverGuard {
                 if(!sampled[i]) {
                     int wx=origin.getBlockX(x),wz=origin.getBlockZ(z);
                     heights[i]=height.sampleValue(context,wx,0,wz);
-                    // This bound is a column invariant; do not recompute it for every block.
-                    roofs[i]=Math.max(0,Math.min(CaveAccessModel.ROOF_DEPTH,roof.sampleValue(context,wx,0,wz)));
+                    roofs[i]=roof.sampleValue(context,wx,0,wz);
                     sampled[i]=true;
                 }
-                boolean keep=CaveAccessModel.permit(heights[i],y,roofs[i]);
+                boolean keep=CaveAccessModel.permit(heights[i],y,Math.max(0,Math.min(CaveAccessModel.ROOF_DEPTH,roofs[i])));
                 CaveTelemetry.carve(canyon,keep,heights[i]-y);
                 if(keep)original.carve(x,y,z);
             }

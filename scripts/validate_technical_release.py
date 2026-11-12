@@ -16,7 +16,6 @@ def save(p,obj):
  p=P(p);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(obj,indent=2)+'\n')
 
 def package_check(jar):
- changed=[]
  with zipfile.ZipFile(jar) as new,zipfile.ZipFile(f'dist/FreshGenerator-Fabric-26.3-{BASE_VERSION}.jar') as old:
   names=new.namelist();require(len(names)==len(set(names)),'Duplicate JAR entry');require(new.testzip() is None,'Corrupt JAR')
   require(not any(n.startswith(('net/minecraft/','dev/freshgenerator/audit/','dev/freshgenerator/pack/','dev/freshgenerator/smoke/')) for n in names),'Non-runtime code in mod')
@@ -29,15 +28,15 @@ def package_check(jar):
   require(after['version']==VERSION,'Wrong version');before['version']=VERSION;require(before==after,'Changed loader/dependency contract')
   oldclasses={n for n in old.namelist() if n.endswith('.class')};newclasses={n for n in names if n.endswith('.class')}
   require(oldclasses==newclasses,'Added/removed runtime class; experimental caches must not ship')
-  allowed={'dev/freshgenerator/cave/CaveCarverGuard.class','dev/freshgenerator/cave/CaveCarverGuard$1.class'}
-  for n in sorted(oldclasses):
-   if old.read(n)!=new.read(n):changed.append(n);require(n in allowed,'Unexpected runtime change: '+n)
-  require(bool(changed),'Cave technical update absent')
-  require(old.read('dev/freshgenerator/forest/ForestEnvironment.class')==new.read('dev/freshgenerator/forest/ForestEnvironment.class'),'Published forest adapter changed')
+  # Both runtime experiments were rejected. No whitelist of changed game classes remains.
+  for n in sorted(oldclasses):require(old.read(n)==new.read(n),'Published runtime changed: '+n)
+  require(len(oldclasses)==28,'Unexpected published runtime inventory')
   manifest=json.loads(new.read('freshgenerator-worldgen-manifest.json'));require(len(manifest['generated_sha256'])==344,'Wrong pack')
   for n,h in manifest['generated_sha256'].items():require(hashlib.sha256(new.read(n)).hexdigest()==h,'Bad generated hash: '+n)
- return {'worldgen_data_resources_identical':344,'all_data_and_assets_identical':True,'changed_runtime_classes':changed,
-         'new_runtime_classes':[],'forest_runtime_byte_identical':True,'experimental_height_cache_in_game_jar':False,
+ return {'worldgen_data_resources_identical':344,'all_data_and_assets_identical':True,'changed_runtime_classes':[],
+         'existing_runtime_classes_byte_identical':28,'new_runtime_classes':[],
+         'forest_runtime_byte_identical':True,'cave_runtime_byte_identical':True,
+         'experimental_height_cache_in_game_jar':False,'experimental_cave_clamp_in_game_jar':False,
          'mixins_and_dependency_contract_unchanged':True}
 
 def build():
@@ -48,7 +47,7 @@ def build():
  suites=[E.parse(p).getroot() for p in P('build/test-results/test').glob('TEST-*.xml')]
  require(bool(suites),'No Java test reports')
  require(all(int(s.get(k,0))==0 for s in suites for k in ('failures','errors','skipped')),'Java test failure/skip')
- count=sum(int(s.get('tests',0)) for s in suites);require(count>=188,'Missing Java tests')
+ count=sum(int(s.get('tests',0)) for s in suites);require(count>=190,'Missing Java tests')
  metrics={name:read(P('build/reports')/name) for name in ['biome-region-metric-tests.json','cave-metrics-tests.json','cave-full-stage-tests.json','technical-update-check-tests.json','ci-evidence-tests.json','technical-reference-tests.json']}
  require(all(m[k]==0 for m in metrics.values() for k in ('failures','errors','skipped')),'Metric test failure/skip')
  require(sum(m['tests'] for m in metrics.values())>=98,'Missing metric tests')
@@ -88,9 +87,12 @@ def publish():
   'rejected_forest_optimization':{'source_commit':'578b6456f2f5ce9cc665642406f0f05a2bfc5d56','run_id':43162819040,'seed':42,'changed_sampled_blocks':9,
    'reason':'Unobserved tree/leaf-litter states; no weakening of the block gate. Restore the exact published forest runtime.',
    'raw_evidence':'research/rejected-candidates/technical-world-fresh-42-578b645.json.gz'},
+  'rejected_cave_optimization':{'source_commit':'845af54c8c7d943036e741b9d931311759fe9dc8','run_id':43166487075,'seed':1337,'changed_sampled_blocks':391,
+   'reason':'Unexplained sculk-related FULL differences against three stable controls. Root cause is not proven; do not ship the unvalidated runtime optimization.',
+   'raw_evidence':'research/rejected-candidates/technical-world-fresh-1337-845af54.json.gz'},
   'limits':['Fixed seeds and sampled FULL columns; not a proof for all worlds','Native structure warnings retained; no villager navigation simulation',
-            'No client/shader/modpack/DH/C2ME test or measured FPS/speedup claim','No new geometry/biome tuning or repair of old chunks',
-            'Primitive forest cache experiment rejected; its standalone allocation numbers are NOT release improvements']}
+            'No client/shader/modpack/DH/C2ME test or measured FPS/speedup claim','Maintenance of compiler/build/testing, not new runtime terrain or biome behavior',
+            'Both runtime optimization experiments rejected; no claim to have fixed native sculk randomness']}
  dist=P('dist');(dist/'audits').mkdir(parents=True,exist_ok=True)
  for src in (jar,sources):
   shutil.copyfile(src,dist/src.name);(dist/(src.name+'.sha256')).write_text(checksum(src)+'  '+src.name+'\n')
