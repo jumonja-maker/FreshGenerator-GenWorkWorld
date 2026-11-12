@@ -25,6 +25,67 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         return server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(
                 ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+name))).value();
     }
+    /** Real native density and single-surface checks across independent alpine districts. */
+    private static JsonObject verifyAlpineDetail(MinecraftServer server,RandomState state,DensityFunction height){
+        var registry=server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION);
+        var mountain=registry.getOrThrow(ResourceKey.create(Registries.DENSITY_FUNCTION,
+            Identifier.parse("freshgenerator:highlands_v2/mountain_mask"))).value();
+        var original=function(server,"detail/original_surface_density");
+        var detail=function(server,"detail/rock_relief");
+        var surface=function(server,"surface_density");
+        record Peak(int x,int z,float height,float mountain) {}
+        List<Peak> candidates=new ArrayList<>();
+        for(int x=-8192;x<=8192;x+=384)for(int z=-8192;z<=8192;z+=384){
+            float h=state.sampleBlockValueUncached(height,x,0,z);
+            if(h<150)continue;
+            float m=state.sampleBlockValueUncached(mountain,x,0,z);
+            if(m>.10)candidates.add(new Peak(x,z,h,m));
+        }
+        candidates.sort(Comparator.comparingDouble((Peak p)->p.height()).reversed());
+        List<Peak> peaks=new ArrayList<>();
+        for(var p:candidates) {
+            if(peaks.stream().noneMatch(q->Math.abs(p.x()-q.x())+Math.abs(p.z()-q.z())<512))peaks.add(p);
+            if(peaks.size()>=40)break;
+        }
+        int cols=0,voxels=0,changed=0,signReversals=0,deep=0,high=0;
+        double maxAbs=0,minRelief=Double.POSITIVE_INFINITY,maxRelief=Double.NEGATIVE_INFINITY;
+        for(var p:peaks)for(int dx=-16;dx<=16;dx+=8)for(int dz=-16;dz<=16;dz+=8){
+            int x=p.x()+dx,z=p.z()+dz,center=(int)Math.floor(
+                state.sampleBlockValueUncached(height,x,0,z));
+            boolean seenAir=false;
+            for(int y=center-12;y<=center+12;y++){
+                double d=state.sampleBlockValueUncached(detail,x,y,z);
+                double old=state.sampleBlockValueUncached(original,x,y,z);
+                double now=state.sampleBlockValueUncached(surface,x,y,z);
+                if(!Double.isFinite(d)||!Double.isFinite(now)||!Double.isFinite(old))
+                    throw new AssertionError("Nonfinite 3-D alpine density");
+                if(Math.abs((now-old)-d)>2e-4)
+                    throw new AssertionError("Unexpected alpine density correction");
+                maxAbs=Math.max(maxAbs,Math.abs(d));
+                minRelief=Math.min(minRelief,d);maxRelief=Math.max(maxRelief,d);
+                if(Math.abs(d)>.003)changed++;
+                if(y<=center-10){deep++;if(Math.abs(d)>1e-6)throw new AssertionError("Detail leaked deep");}
+                if(y>=center+10){high++;if(Math.abs(d)>1e-6)throw new AssertionError("Detail leaked above top");}
+                if(now<=0)seenAir=true;
+                else if(seenAir)signReversals++;
+                voxels++;
+            }
+            cols++;
+        }
+        if(cols<30||changed<50)throw new AssertionError("Insufficient actual alpine detail evidence: "+cols+"/"+changed);
+        if(maxAbs>0.1201||signReversals>0)
+            throw new AssertionError("Unbounded or disjoint alpine profile: "+maxAbs+"/"+signReversals);
+        JsonObject out=new JsonObject();
+        out.addProperty("peak_regions",peaks.size());out.addProperty("sampled_columns",cols);
+        out.addProperty("voxels",voxels);out.addProperty("changed_voxels",changed);
+        out.addProperty("max_absolute_density_correction",maxAbs);
+        out.addProperty("min_relief",minRelief);out.addProperty("max_relief",maxRelief);
+        out.addProperty("sign_reversals",signReversals);
+        out.addProperty("deep_zero_checks",deep);out.addProperty("high_zero_checks",high);
+        System.out.println("FRESHGENERATOR_ALPINE_DETAIL_PASS "+out);
+        return out;
+    }
+
     private static void verify(MinecraftServer server) throws Exception {
         var level=server.overworld();
         var generator=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();
@@ -64,6 +125,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         r.addProperty("monotone_exterior_density_samples",monotone);r.addProperty("protected_roof_samples",roofs);
         r.addProperty("deep_cave_weight_samples",deep);r.addProperty("native_deep_cavity_samples",deepCavities);
         r.addProperty("max_sampled_height_step_per_block",maxNeighbourStep);
+        r.add("alpine_detail",verifyAlpineDetail(server,state,height));
         r.addProperty("scope","native density sampling; FULL topology and structures are audited separately; not a screenshot reproduction");
         Files.writeString(Path.of("freshgenerator-envelope.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r)+"\n");
         System.out.println("FRESHGENERATOR_ENVELOPE_PASS "+r);

@@ -8,7 +8,7 @@ import java.util.zip.ZipFile;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BiomeRegionCompilerTest {
- static Map<String,JsonElement> pack()throws Exception{return WorldgenCatalog.compile(new VanillaAssets());}
+ static Map<String,JsonElement> pack()throws Exception{return WorldgenCatalog.compileBeforeMountainDetails(new VanillaAssets());}
  static JsonElement read(ZipFile z,String n)throws Exception{return JsonParser.parseString(new String(z.getInputStream(z.getEntry(n)).readAllBytes(),StandardCharsets.UTF_8));}
  @Test void historicalStageStillMatchesEveryPublished031Resource()throws Exception {
   var old=WorldgenCatalog.compileBeforeBiomeRegions(new VanillaAssets());int count=0;

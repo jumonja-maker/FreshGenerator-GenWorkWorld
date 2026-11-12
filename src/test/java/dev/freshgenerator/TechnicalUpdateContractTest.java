@@ -34,7 +34,7 @@ class TechnicalUpdateContractTest {
         var p=baseline();p.put(BiomeRegionCompiler.path("regions/original_vegetation"),new JsonPrimitive(0));failsAtomically(p);
     }
     @Test void allProductionWorldgenDataMatchesPublished032()throws Exception {
-        var p=WorldgenCatalog.compile(new VanillaAssets());int count=0;
+        var p=WorldgenCatalog.compileBeforeMountainDetails(new VanillaAssets());int count=0;
         try(var zip=new ZipFile("dist/FreshGenerator-Fabric-26.3-0.3.2-alpha.1.jar")){
             for(var e:Collections.list(zip.entries()))if(e.getName().startsWith("data/")&&e.getName().endsWith(".json")){
                 assertNotNull(p.get(e.getName()),e.getName());
