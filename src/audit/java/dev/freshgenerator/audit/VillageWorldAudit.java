@@ -1,0 +1,163 @@
+package dev.freshgenerator.audit;
+
+import com.google.gson.*;
+import dev.freshgenerator.village.VillageTerrainModel;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.minecraft.core.*;
+import net.minecraft.core.registries.*;
+import net.minecraft.resources.*;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.*;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.*;
+import net.minecraft.world.level.levelgen.densityfunction.*;
+import net.minecraft.world.level.levelgen.structure.*;
+import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.util.*;
+
+/** Read-only paired measurements. The same observer runs on 0.3.3 and candidate.
+ * Expected policy columns are never used to write blocks or filter failures.
+ */
+public final class VillageWorldAudit implements ModInitializer {
+    private static final Gson G=new GsonBuilder().setPrettyPrinting().create();
+    private record Location(String id,int chunkX,int chunkZ){}
+    private record Study(Location location,StructureStart start,BoundingBox box,VillageTerrainModel model){}
+    private ServerLevel level;private NoiseBasedChunkGenerator generator;private RandomState state;
+    private DensitySampler heights;
+    private final SamplerContext context=SamplerContext.builder().enableCaches().build();
+    private final JsonObject report=new JsonObject();
+    private final Set<Long> fullChunks=new HashSet<>();
+    @Override public void onInitialize(){if(!"true".equals(System.getenv("FG_VILLAGE_AUDIT")))return;
+        ServerLifecycleEvents.SERVER_STARTED.register(server->{boolean ok=false;try{run(server);ok=true;}
+            catch(Throwable error){error.printStackTrace();report.addProperty("failure",error.toString());}
+            finally{report.addProperty("completed",ok);try{Files.writeString(Path.of("village-audit.json"),G.toJson(report)+"\n");}catch(Exception e){throw new IllegalStateException(e);}
+                System.out.println(ok?"FRESHGENERATOR_VILLAGE_AUDIT_PASS":"FRESHGENERATOR_VILLAGE_AUDIT_FAIL");server.halt(false);}});
+    }
+    private static String id(BlockState b){return BuiltInRegistries.BLOCK.getKey(b.getBlock()).toString();}
+    private static String hash(MessageDigest d){return HexFormat.of().formatHex(d.digest());}
+    private static void hash(MessageDigest d,String s){d.update(s.getBytes(StandardCharsets.UTF_8));}
+    private double height(int x,int z){return heights.sampleValue(context,x,0,z);}
+    private void run(MinecraftServer server)throws Exception {
+        level=server.overworld();generator=(NoiseBasedChunkGenerator)level.getChunkSource().getGenerator();state=level.getChunkSource().randomState();
+        String settings=generator.generatorSettings().unwrapKey().orElseThrow().identifier().toString();
+        if(!settings.equals("freshgenerator:highlands_v2"))throw new AssertionError("Wrong generator");
+        heights=state.getSampler(server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(ResourceKey.create(Registries.DENSITY_FUNCTION,
+            Identifier.parse("freshgenerator:highlands_v2/coherent/height"))).value());
+        report.addProperty("source_commit",System.getenv("FG_VILLAGE_SOURCE"));report.addProperty("phase",System.getenv("FG_VILLAGE_PHASE"));
+        report.addProperty("seed",level.getSeed());report.addProperty("settings",settings);
+        Path locationsFile=Path.of(System.getenv("FG_VILLAGE_LOCATIONS"));List<Location> locations;
+        if(Files.exists(locationsFile))locations=Arrays.asList(G.fromJson(Files.readString(locationsFile),Location[].class));
+        else {
+            locations=new ArrayList<>();
+            locations.add(locate(server,List.of("village_plains","village_desert","village_savanna","village_snowy","village_taiga"),8192,8192,24));
+            Location savanna=locate(server,List.of("village_savanna"),-8192,8192,48);
+            if(!locations.contains(savanna))locations.add(savanna);
+            if(locations.size()<2)locations.add(locate(server,List.of("village_plains","village_desert","village_snowy","village_taiga"),-12288,-8192,32));
+            Files.writeString(locationsFile,G.toJson(locations)+"\n");
+        }
+        List<Study> studies=new ArrayList<>();
+        for(Location location:locations){
+            var definition=server.registryAccess().lookupOrThrow(Registries.STRUCTURE).getOrThrow(ResourceKey.create(Registries.STRUCTURE,Identifier.parse(location.id))).value();
+            var start=level.getChunk(location.chunkX,location.chunkZ,ChunkStatus.STRUCTURE_STARTS).getStartForStructure(definition);
+            if(start==null||!start.isValid())throw new AssertionError("Missing real village "+location);
+            var sites=new ArrayList<VillageTerrainModel.Site>();
+            for(var piece:start.getPieces())if(piece instanceof PoolElementStructurePiece pool){
+                var b=piece.getBoundingBox();int ground=b.minY()+pool.getGroundLevelDelta();
+                if(ground<generator.getSeaLevel()-4||ground>300)continue;
+                boolean rigid=pool.getElement().getProjection()==StructureTemplatePool.Projection.RIGID
+                    &&(long)(b.maxX()-b.minX()+1)*(b.maxZ()-b.minZ()+1)>=16&&b.maxY()-b.minY()>=3;
+                sites.add(new VillageTerrainModel.Site(b.minX(),b.minZ(),b.maxX(),b.maxZ(),ground,rigid));
+            }
+            if(sites.isEmpty())throw new AssertionError("No plot footprints");
+            studies.add(new Study(location,start,start.getBoundingBox(),new VillageTerrainModel(sites)));
+        }
+        JsonArray terrain=new JsonArray();
+        for(Study s:studies){prepare(s,ChunkStatus.TERRAIN,3);terrain.add(scanTerrain(s));}
+        report.add("terrain",terrain);
+        if(!"reload".equals(System.getenv("FG_VILLAGE_PHASE")))Files.writeString(Path.of("village-terrain.json"),G.toJson(terrain)+"\n");
+        for(var status:ChunkStatus.getStatusList())if(status.isAfter(ChunkStatus.TERRAIN))
+            for(Study s:studies)prepare(s,status,status==ChunkStatus.FULL?1:2);
+        JsonArray full=new JsonArray();for(Study s:studies)full.add(scanFull(s));report.add("villages",full);
+        report.addProperty("explicit_full_chunks",fullChunks.size());
+        report.addProperty("scope","Limited actual villages; raw pre-feature and FULL columns; no villager AI/client rendering; native piece layout preserved");
+    }
+    private Location locate(MinecraftServer server,List<String> names,int x,int z,int radius){
+        var registry=server.registryAccess().lookupOrThrow(Registries.STRUCTURE);List<Holder<Structure>> holders=new ArrayList<>();
+        for(String n:names)holders.add(registry.getOrThrow(ResourceKey.create(Registries.STRUCTURE,Identifier.parse("minecraft:"+n))));
+        var found=generator.findNearestMapStructure(level,HolderSet.direct(holders),new BlockPos(x,80,z),radius,false);
+        if(found==null)throw new AssertionError("No village in bounded search: "+names);
+        return new Location(found.getSecond().unwrapKey().orElseThrow().identifier().toString(),Math.floorDiv(found.getFirst().getX(),16),Math.floorDiv(found.getFirst().getZ(),16));
+    }
+    private void prepare(Study s,ChunkStatus stage,int halo){
+        var b=s.box;int x0=Math.floorDiv(b.minX()-24,16),z0=Math.floorDiv(b.minZ()-24,16),x1=Math.floorDiv(b.maxX()+24,16),z1=Math.floorDiv(b.maxZ()+24,16);
+        if((x1-x0+1)*(z1-z0+1)>625)throw new AssertionError("Village exceeds fixed audit budget");
+        for(int x=x0-halo;x<=x1+halo;x++)for(int z=z0-halo;z<=z1+halo;z++){
+            var chunk=level.getChunk(x,z,stage);if(chunk==null||!chunk.getPersistedStatus().isOrAfter(stage))throw new AssertionError("Incomplete stage");
+            if(stage==ChunkStatus.FULL)fullChunks.add(((long)x<<32)|(z&0xffffffffL));
+        }
+        System.out.println("VILLAGE_STAGE "+s.location+" "+stage);
+    }
+    private JsonObject identity(Study s){var r=G.toJsonTree(s.location).getAsJsonObject();r.add("sites",G.toJsonTree(s.model.sites()));r.addProperty("pieces",s.start.getPieces().size());return r;}
+    private JsonObject scanTerrain(Study s)throws Exception {
+        JsonObject r=identity(s);var deep=MessageDigest.getInstance("SHA-256");var outside=MessageDigest.getInstance("SHA-256");
+        int samples=0,roofColumns=0,roofFailures=0,openColumns=0,rigidColumns=0,gradeErrors=0,predecorated=0;
+        JsonArray failures=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
+        for(int x=s.box.minX()-32;x<=s.box.maxX()+32;x+=2)for(int z=s.box.minZ()-32;z<=s.box.maxZ()+32;z+=2){
+            var chunk=level.getChunk(Math.floorDiv(x,16),Math.floorDiv(z,16),ChunkStatus.TERRAIN);
+            if(chunk.getPersistedStatus()!=ChunkStatus.TERRAIN){predecorated++;continue;}
+            double h=height(x,z);var col=s.model.column(x,z,h,generator.getSeaLevel());samples++;
+            int top=chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG,x&15,z&15)+1;
+            if(col.influence()==1){
+                roofColumns++;boolean bad=false;
+                for(int y=(int)Math.floor(col.height())-2;y>=(int)Math.floor(col.height())-12;y--){p.set(x,y,z);if(!chunk.getBlockState(p).isSolid())bad=true;}
+                if(bad){roofFailures++;if(failures.size()<20){JsonObject f=new JsonObject();f.addProperty("x",x);f.addProperty("z",z);f.addProperty("target",col.height());f.addProperty("actual",top);failures.add(f);}}
+                if(top<col.height()-4)openColumns++;
+            }
+            List<VillageTerrainModel.Site> cores=new ArrayList<>();
+            for(var site:s.model.sites())if(site.rigid()&&site.distance(x,z)==0)cores.add(site);
+            if(cores.size()==1&&col.influence()==1){rigidColumns++;if(Math.abs(top-cores.getFirst().groundY())>1)gradeErrors++;}
+            for(int y=-48;y<=Math.min(32,(int)Math.floor(Math.min(h,col.height()))-48);y++){
+                p.set(x,y,z);hash(deep,x+","+y+","+z+"="+chunk.getBlockState(p)+"\n");
+            }
+            if(col.influence()==0)for(int y=-64;y<320;y+=2){p.set(x,y,z);hash(outside,x+","+y+","+z+"="+chunk.getBlockState(p)+"\n");}
+        }
+        r.addProperty("terrain_columns",samples);r.addProperty("predecorated_columns_not_used",predecorated);
+        r.addProperty("protected_roof_columns",roofColumns);r.addProperty("roof_failure_columns",roofFailures);
+        r.addProperty("open_hole_columns",openColumns);r.addProperty("rigid_columns",rigidColumns);r.addProperty("rigid_grade_error_columns",gradeErrors);
+        r.addProperty("deep_sha256",hash(deep));r.addProperty("outside_sha256",hash(outside));r.add("examples",failures);return r;
+    }
+    private JsonObject scanFull(Study s)throws Exception {
+        JsonObject r=identity(s);var blocks=MessageDigest.getInstance("SHA-256");
+        int pathBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;Set<Long> seenDoors=new HashSet<>();
+        BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
+        for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4)
+            for(int y=-64;y<320;y++){p.set(x,y,z);hash(blocks,x+","+y+","+z+"="+level.getBlockState(p)+"\n");}
+        for(int x=s.box.minX();x<=s.box.maxX();x++)for(int z=s.box.minZ();z<=s.box.maxZ();z++){
+            double expected=s.model.column(x,z,height(x,z),generator.getSeaLevel()).height();
+            for(int y=Math.max(-60,(int)expected-24);y<=Math.min(318,(int)expected+32);y++){
+                p.set(x,y,z);var b=level.getBlockState(p);String name=id(b);
+                if(name.equals("minecraft:dirt_path")||name.equals("minecraft:farmland")){
+                    boolean gap=false;for(int d=1;d<=8;d++)if(!level.getBlockState(new BlockPos(x,y-d,z)).isSolid())gap=true;
+                    if(name.equals("minecraft:dirt_path")){pathBlocks++;if(gap)pathVoids++;}else{farmland++;if(gap)farmVoids++;}
+                }
+                if(name.endsWith("_door")&&b.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)&&b.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF)==DoubleBlockHalf.LOWER&&seenDoors.add(p.asLong())){
+                    doors++;Direction f=b.getValue(BlockStateProperties.HORIZONTAL_FACING);boolean exit=false;
+                    for(Direction d:List.of(f,f.getOpposite()))for(int dy=-1;dy<=1;dy++){
+                        BlockPos q=new BlockPos(x,y,z).relative(d).offset(0,dy,0);
+                        if(passable(q)&&passable(q.above())&&level.getBlockState(q.below()).isFaceSturdy(level,q.below(),Direction.UP))exit=true;
+                    }if(!exit)blockedDoors++;
+                }
+            }
+        }
+        r.addProperty("full_sha256",hash(blocks));r.addProperty("path_blocks",pathBlocks);r.addProperty("path_columns_with_void_within_8",pathVoids);
+        r.addProperty("farmland_blocks",farmland);r.addProperty("farmland_columns_with_void_within_8",farmVoids);
+        r.addProperty("doors",doors);r.addProperty("door_exit_warnings",blockedDoors);return r;
+    }
+    private boolean passable(BlockPos p){var b=level.getBlockState(p);return b.getCollisionShape(level,p).isEmpty()&&b.getFluidState().isEmpty();}
+}
