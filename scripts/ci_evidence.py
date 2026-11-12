@@ -8,6 +8,8 @@ from pathlib import Path,PurePosixPath
 
 MAX_PACKED=16*1024*1024
 MAX_RAW=64*1024*1024
+# Base64 adds 4/3 overhead; keep decoded bytes and JSON envelope separately bounded.
+MAX_ENVELOPE=96*1024*1024
 BUNDLES={
  'build_blob':'technical-build',
  'world_fresh_42':'technical-world-fresh-42',
@@ -50,21 +52,28 @@ def pack(root,patterns,name,identity):
    files[key]={'sha256':hashlib.sha256(raw).hexdigest(),'content':base64.b64encode(raw).decode('ascii')}
  require(0<len(files)<=5000,'No evidence or too many files')
  raw=json.dumps({'schema':1,'name':name,'identity':identity,'files':files},sort_keys=True,separators=(',',':')).encode()
- require(len(raw)<=MAX_RAW,'Envelope exceeds size budget')
+ require(len(raw)<=MAX_ENVELOPE,'Envelope exceeds size budget')
  data=gzip.compress(raw,mtime=0);require(len(data)<=MAX_PACKED,'Compressed evidence too large')
  return data
 
 def unpack(data,name,identity,destination):
  require(len(data)<=MAX_PACKED,'Oversized compressed evidence')
- with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:raw=stream.read(MAX_RAW+1)
- require(len(raw)<=MAX_RAW,'Oversized decoded evidence')
+ with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:raw=stream.read(MAX_ENVELOPE+1)
+ require(len(raw)<=MAX_ENVELOPE,'Oversized decoded envelope')
  bundle=json.loads(raw)
  require(bundle['schema']==1 and bundle['name']==name,'Wrong bundle kind')
- require(bundle['identity']==identity,'Evidence is from a different commit/run/repository')
+ actual=provenance(bundle['identity']);expected=provenance(identity)
+ require(all(actual[k]==expected[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_REPOSITORY')),
+         'Evidence is from a different commit/run/repository')
+ # GitHub retains successful outputs when a failed job is retried. Never accept
+ # another commit/run or an impossible future attempt.
+ require(1<=int(actual['GITHUB_RUN_ATTEMPT'])<=int(expected['GITHUB_RUN_ATTEMPT']),
+         'Invalid or future evidence attempt')
  require(isinstance(bundle['files'],dict) and 0<len(bundle['files'])<=5000,'Missing files')
- validated={}
+ validated={};total=0
  for key,entry in bundle['files'].items():
   valid_name(key);content=base64.b64decode(entry['content'],validate=True)
+  total+=len(content);require(total<=MAX_RAW,'Oversized decoded files')
   require(hashlib.sha256(content).hexdigest()==entry['sha256'],'File fingerprint mismatch: '+key)
   validated[key]=content
  destination=Path(destination);require(not destination.exists(),'Refusing to overwrite prior evidence')
@@ -72,11 +81,11 @@ def unpack(data,name,identity,destination):
  for key,content in validated.items():
   path=destination/key;path.parent.mkdir(parents=True,exist_ok=True)
   with path.open('xb') as out:out.write(content)
- return {'name':name,'files':len(validated),'sha256':hashlib.sha256(data).hexdigest(),'git_blob':blob_sha(data)}
+ return {'name':name,'files':len(validated),'sha256':hashlib.sha256(data).hexdigest(),'git_blob':blob_sha(data),
+         'source_run_attempt':actual['GITHUB_RUN_ATTEMPT']}
 
 def request(endpoint,payload=None):
  repo=provenance()['GITHUB_REPOSITORY']
- # Deliberately fixed to GitHub, not an arbitrary URL supplied in an artifact.
  url='https://api.github.com/repos/'+repo+'/git/blobs'+endpoint
  headers={'Accept':'application/vnd.github+json','Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],
           'X-GitHub-Api-Version':'2022-11-28','User-Agent':'FreshGenerator-CI','Content-Type':'application/json'}

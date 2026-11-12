@@ -1,0 +1,15 @@
+// CI-only canonical Maven Central fallback. Keep every pinned dependency version.
+// Applied equally to the unchanged reference worktree and the candidate.
+// Source: https://central.sonatype.org/faq/ssl/
+gradle.settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.maven {
+        name = 'FreshGeneratorCentralCanonicalFallback'
+        url = 'https://repo1.maven.org/maven2/'
+    }
+}
+gradle.allprojects { project ->
+    project.repositories.maven {
+        name = 'FreshGeneratorCentralCanonicalFallback'
+        url = 'https://repo1.maven.org/maven2/'
+    }
+}

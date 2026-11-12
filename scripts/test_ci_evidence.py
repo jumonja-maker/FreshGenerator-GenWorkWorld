@@ -25,8 +25,16 @@ class EvidenceTest(unittest.TestCase):
  def test_wrong_commit_rejected(self):
   identity=dict(IDENTITY,GITHUB_SHA='b'*40)
   with self.assertRaises(ValueError):self.extract(identity=identity)
- def test_wrong_attempt_rejected(self):
-  with self.assertRaises(ValueError):self.extract(identity=dict(IDENTITY,GITHUB_RUN_ATTEMPT='2'))
+ def test_future_attempt_rejected(self):
+  data=self.changed(lambda d:d['identity'].update(GITHUB_RUN_ATTEMPT='2'))
+  with self.assertRaises(ValueError):self.extract(data)
+ def test_successful_previous_attempt_can_be_reused_with_same_commit_and_run(self):
+  r=self.extract(identity=dict(IDENTITY,GITHUB_RUN_ATTEMPT='2'));self.assertEqual('1',r['source_run_attempt'])
+ def test_zero_attempt_rejected(self):
+  data=self.changed(lambda d:d['identity'].update(GITHUB_RUN_ATTEMPT='0'))
+  with self.assertRaises(ValueError):self.extract(data)
+ def test_another_run_cannot_be_reused(self):
+  with self.assertRaises(ValueError):self.extract(identity=dict(IDENTITY,GITHUB_RUN_ID='124'))
  def test_wrong_repository_rejected(self):
   with self.assertRaises(ValueError):self.extract(identity=dict(IDENTITY,GITHUB_REPOSITORY='other/repo'))
  def test_wrong_bundle_rejected(self):

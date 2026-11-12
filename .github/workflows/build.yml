@@ -6,7 +6,7 @@ permissions:
   contents: write
 concurrency:
   group: core-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
@@ -21,6 +21,10 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Use the canonical Central fallback for all worktrees
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Compile game APIs and run all contract tests
         run: |
           gradle --no-daemon --console=plain clean build
@@ -70,6 +74,10 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Use the canonical Central fallback for all worktrees
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Exact reference, candidate and saved-world comparison
         run: bash scripts/technical_update_audit.sh '${{ matrix.seed }}' '${{ matrix.scope }}'
       - name: Keep observations without Actions artifact storage
@@ -103,6 +111,10 @@ jobs:
         with: {distribution: temurin, java-version: '25'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Use the canonical Central fallback for all worktrees
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Actual structures and supported terrain with vanilla control
         run: bash scripts/technical_structure_audit.sh '${{ matrix.seed }}'
       - name: Keep warnings and structure evidence without artifact quota
