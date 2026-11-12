@@ -1,0 +1,80 @@
+name: Prepare isolated hydrology debug runtime
+on:
+  push:
+    branches: [fix/lake-river-generation-v2]
+    paths: [.github/workflows/hydrology-debug-runtime.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Build the same native APIs and export isolated compile inputs
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d" debug-runtime
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          cat > /tmp/debug-classpath.gradle <<'INIT'
+          allprojects {
+            afterEvaluate { p ->
+              tasks.register('exportDebugInputs') {
+                dependsOn 'testClasses', 'hydrologyAuditJar', 'jar'
+                doLast {
+                  def root = new File(p.projectDir, 'debug-runtime')
+                  def jars = new File(root, 'jars'); jars.mkdirs()
+                  def inventory = [:]
+                  sourceSets.each { s ->
+                    ['compileClasspath', 'runtimeClasspath'].each { role ->
+                      inventory[s.name + '.' + role] = s[role].files.findAll { it.exists() }.collect { f ->
+                        if (f.isDirectory()) return f.absolutePath.replace(p.projectDir.absolutePath, 'PROJECT')
+                        def hash = java.security.MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString()
+                        def target = new File(jars, hash.substring(0,12)+'-'+f.name)
+                        if (!target.exists()) target.bytes = f.bytes
+                        return 'RUNTIME/jars/'+target.name
+                      }
+                    }
+                  }
+                  new File(root, 'classpaths.json').text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(inventory))
+                }
+              }
+            }
+          }
+          INIT
+          gradle --no-daemon --console=plain -I /tmp/debug-classpath.gradle exportDebugInputs
+      - name: Prime a clean packaged native server and retain only its bootstrap files
+        env:
+          FG_HYDROLOGY_SKIP_BUILD: 'true'
+          FG_HYDROLOGY_RUNS: candidate
+          FG_HYDROLOGY_PARTIAL: 'true'
+        run: |
+          cp scripts/hydrology_world_audit.sh /tmp/hydrology-world-audit.original
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/hydrology_world_audit.sh')
+          s=p.read_text()
+          s=s.replace("trap 'rm -rf -- \"$scratch\"' EXIT", "trap 'tar --exclude=\"world-*\" --exclude=logs --exclude=mods --exclude=crash-reports --exclude=candidate-input.jar --exclude=hydrology-observation.json -czf \"$root/debug-runtime/server-bootstrap.tar.gz\" -C \"$scratch\" .; rm -rf -- \"$scratch\"' EXIT")
+          p.write_text(s)
+          PY
+          bash scripts/hydrology_world_audit.sh 42
+          cp /tmp/hydrology-world-audit.original scripts/hydrology_world_audit.sh
+      - name: Archive project-local inputs without credentials or generated worlds
+        run: |
+          tar --exclude=lib/src.zip --exclude=jmods --exclude=man --exclude=demo -czf debug-runtime/jdk25.tar.gz -C "$JAVA_HOME" .
+          tar -czf debug-runtime/compiled.tar.gz build/classes build/resources build/libs build/generated
+          cp build/hydrology-audit/*.jar debug-runtime/
+          git rev-parse HEAD > debug-runtime/source-sha.txt
+          du -sh debug-runtime/*
+          tar -cf hydrology-debug-runtime.tar debug-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-debug-runtime
+          path: hydrology-debug-runtime.tar
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
