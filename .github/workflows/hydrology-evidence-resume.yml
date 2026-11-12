@@ -1,0 +1,55 @@
+name: Recover hydrology regression evidence
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-evidence-resume.yml]
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify and decode original evidence blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, pathlib, urllib.request
+          blobs = {'structures': '8b47e52e7197d5868ce6c2838a701f8703bf9f91', 'reverse': '68cf193a1cbcaf3a33c445a27cb8ac5b65d6a909', 'normal': '42aedf0ae49450bc3886d40b2ab961295010bb55'}
+          for label, sha in blobs.items():
+              url = 'https://api.github.com/repos/' + os.environ['REPO'] + '/git/blobs/' + sha
+              req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=60) as response: doc = json.load(response)
+              raw = base64.b64decode(doc['content'])
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest() == sha
+              bundle = json.loads(gzip.decompress(raw))
+              assert bundle['identity']['GITHUB_SHA'] == '14254dfab64063990e8a695c2de7e350ba1958cc'
+              root = pathlib.Path('evidence') / label
+              root.mkdir(parents=True, exist_ok=True)
+              (root / 'identity.json').write_text(json.dumps(bundle['identity'], indent=2))
+              docs = {}
+              for name, entry in bundle['files'].items():
+                  assert '..' not in pathlib.PurePosixPath(name).parts and not pathlib.PurePosixPath(name).is_absolute()
+                  data = base64.b64decode(entry['content'])
+                  assert hashlib.sha256(data).hexdigest() == entry['sha256']
+                  target = root / name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
+                  if name.endswith('.json'): docs[name] = json.loads(data)
+              print('RECOVERED', label, len(bundle['files']))
+              for a,b in [('candidate.json','reverse.json'), ('candidate.json','parallel.json'), ('candidate.json','reload.json'), ('normal-baseline.json','normal-candidate.json')]:
+                  if a not in docs or b not in docs: continue
+                  differences=[]
+                  for wa,wb in zip(docs[a]['windows'],docs[b]['windows']):
+                      for i,(ca,cb) in enumerate(zip(wa['columns'],wb['columns'])):
+                          sig = lambda c: c[1:] if a.startswith('normal') else (c[2],c[3],c[4]&15) if c[5] else None
+                          if sig(ca)!=sig(cb): differences.append({'site':wa['site'], 'x':wa['site']['x']+i%33-16, 'z':wa['site']['z']+i//33-16, 'a':ca, 'b':cb})
+                  print('DIFFERENCES',label,a,b,len(differences),json.dumps(differences[:12]))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: original-hydrology-evidence
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: error
