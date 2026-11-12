@@ -113,8 +113,9 @@ def publish():
     require(baseline > 0 and candidate <= 2 * baseline, 'FULL generation exceeds twice the paired baseline')
     lake_levels = {y for result in hydrology.values() for row in result['windows'] for y in row['matched_lake_levels']}
     require(len(lake_levels) >= 3, 'Insufficient observed lake stages')
-    require(any(row['kind'] == 'throughflow-lake' and row['matched_lake_columns'] >= 24
-                for result in hydrology.values() for row in result['windows']), 'No observed throughflow lake')
+    require(sum(any(row['kind'] == 'throughflow-lake' and row['matched_lake_columns'] >= 24
+                    and row['connected_lower_spillway_columns'] > 0 for row in result['windows'])
+                for result in hydrology.values()) >= 2, 'No connected lake outlets on two independent seeds')
     regressions = prior_regressions(root, source)
 
     dist = Path('dist')

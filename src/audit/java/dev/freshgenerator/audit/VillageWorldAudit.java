@@ -9,12 +9,16 @@ import net.minecraft.core.registries.*;
 import net.minecraft.resources.*;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.*;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.*;
 import net.minecraft.world.level.levelgen.densityfunction.*;
 import net.minecraft.world.level.levelgen.structure.*;
+import net.minecraft.world.level.levelgen.structure.pools.SinglePoolElement;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -34,6 +38,7 @@ public final class VillageWorldAudit implements ModInitializer {
     private final SamplerContext context=SamplerContext.builder().enableCaches().build();
     private final JsonObject report=new JsonObject();
     private final Set<Long> fullChunks=new HashSet<>();
+    private final Map<Long,ChunkAccess> observedFullChunks=new HashMap<>();
     @Override public void onInitialize(){if(!"true".equals(System.getenv("FG_VILLAGE_AUDIT")))return;
         ServerLifecycleEvents.SERVER_STARTED.register(server->{boolean ok=false;try{run(server);ok=true;}
             catch(Throwable error){error.printStackTrace();report.addProperty("failure",error.toString());}
@@ -59,7 +64,7 @@ public final class VillageWorldAudit implements ModInitializer {
             drainage=state.getClass().getMethod("freshgenerator$drainage").invoke(state);
             if(drainage!=null)waterAt=drainage.getClass().getMethod("waterAt",int.class,int.class);
         } catch(NoSuchMethodException absent) { drainage=null; }
-        report.addProperty("hydrology_observer_schema",2);
+        report.addProperty("hydrology_observer_schema",3);
         report.addProperty("source_commit",System.getenv("FG_VILLAGE_SOURCE"));report.addProperty("phase",System.getenv("FG_VILLAGE_PHASE"));
         report.addProperty("seed",level.getSeed());report.addProperty("settings",settings);
         Path locationsFile=Path.of(System.getenv("FG_VILLAGE_LOCATIONS"));List<Location> locations;
@@ -98,6 +103,9 @@ public final class VillageWorldAudit implements ModInitializer {
         if(!"reload".equals(System.getenv("FG_VILLAGE_PHASE")))Files.writeString(Path.of("village-terrain.json"),G.toJson(terrain)+"\n");
         for(var status:ChunkStatus.getStatusList())if(status.isAfter(ChunkStatus.TERRAIN))
             for(Study s:studies)prepare(s,status,status==ChunkStatus.FULL?1:2);
+        // Persist generation/postprocessing before recording the saved-world
+        // snapshot, with every decoration origin around the sample already FULL.
+        server.saveEverything(true,true,true);
         JsonArray full=new JsonArray();for(Study s:studies)full.add(scanFull(s));report.add("villages",full);
         report.addProperty("explicit_full_chunks",fullChunks.size());
         report.addProperty("scope","Limited actual villages; raw pre-feature and FULL columns; no villager AI/client rendering; native piece layout preserved");
@@ -168,23 +176,53 @@ public final class VillageWorldAudit implements ModInitializer {
     }
     private JsonObject scanFull(Study s)throws Exception {
         JsonObject r=identity(s);var blocks=MessageDigest.getInstance("SHA-256");
-        int pathBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;
+        int pathBlocks=0,bridgeBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;
         int protectedPathVoids=0,protectedFarmVoids=0,protectedLava=0;Set<Long> seenDoors=new HashSet<>();
-        JsonArray gaps=new JsonArray();BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
-        for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4)
-            for(int y=-64;y<320;y++){p.set(x,y,z);hash(blocks,x+","+y+","+z+"="+level.getBlockState(p)+"\n");}
+        JsonArray gaps=new JsonArray(),roadSurface=new JsonArray();
+        List<BoundingBox> streets=new ArrayList<>();
+        for(var piece:s.start.getPieces())if(piece instanceof PoolElementStructurePiece pool
+                &&pool.getElement() instanceof SinglePoolElement street
+                &&street.getProjection()==StructureTemplatePool.Projection.TERRAIN_MATCHING
+                &&street.getTemplateLocation().getPath().startsWith("village/")
+                &&street.getTemplateLocation().getPath().contains("/streets/"))streets.add(pool.getBoundingBox());
+        var fullPalette=new LinkedHashMap<String,Integer>();var fullColumns=new JsonArray();
+        var encoded=new IdentityHashMap<BlockState,byte[]>();var pos=new BlockPos.MutableBlockPos();
+        for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4){
+            var chunk=fullChunk(x,z);
+            var row=new JsonArray();row.add(x);row.add(z);
+            int last=-1,length=0;
+            for(int y=-64;y<320;y++){
+                var state=chunk.getBlockState(pos.set(x,y,z));
+                blocks.update(encoded.computeIfAbsent(state,b->(b+"\n").getBytes(StandardCharsets.UTF_8)));
+                int id=fullPalette.computeIfAbsent(state.toString(),key->fullPalette.size());
+                if(id!=last&&length!=0){row.add(length);row.add(last);length=0;}
+                last=id;length++;
+            }
+            row.add(length);row.add(last);fullColumns.add(row);
+        }
         for(int x=s.box.minX();x<=s.box.maxX();x++)for(int z=s.box.minZ();z<=s.box.maxZ();z++){
+            var chunk=fullChunk(x,z);
             double h=height(x,z);var column=s.model.column(x,z,h,generator.getSeaLevel());double expected=column.height();
+            boolean street=false;
+            for(var box:streets)if(x>=box.minX()&&x<=box.maxX()&&z>=box.minZ()&&z<=box.maxZ()){street=true;break;}
+            int roadY=Integer.MIN_VALUE;String roadBlock="";
             for(int y=Math.max(-60,(int)expected-24);y<=Math.min(318,(int)expected+32);y++){
-                p.set(x,y,z);var b=level.getBlockState(p);String name=id(b);
-                if(name.equals("minecraft:dirt_path")||name.equals("minecraft:farmland")){
+                pos.set(x,y,z);var b=chunk.getBlockState(pos);String name=id(b);
+                boolean path=name.equals("minecraft:dirt_path");
+                boolean bridge=street&&isStreetBridge(s.location.id,name)
+                        &&(chunk.getFluidState(pos.below()).is(FluidTags.WATER)||chunk.getBlockState(pos.below()).is(Blocks.ICE));
+                if(path||bridge){
+                    if(path)pathBlocks++;
+                    roadY=y;roadBlock=name;
+                }
+                if(path||name.equals("minecraft:farmland")){
                     boolean gap=false,airOrLava=false,lava=false;int first=0;String gapBlock="";
                     for(int d=1;d<=8;d++){
-                        var below=level.getBlockState(new BlockPos(x,y-d,z));
+                        var below=chunk.getBlockState(new BlockPos(x,y-d,z));
                         boolean hot=id(below).equals("minecraft:lava");lava|=hot;airOrLava|=hot||below.isAir();
                         if(!below.isSolid()){gap=true;if(first==0){first=d;gapBlock=below.toString();}}
                     }
-                    if(name.equals("minecraft:dirt_path")){pathBlocks++;if(gap)pathVoids++;}else{farmland++;if(gap)farmVoids++;}
+                    if(path){if(gap)pathVoids++;}else{farmland++;if(gap)farmVoids++;}
                     if(column.influence()==1){
                         if(lava)protectedLava++;
                         if(airOrLava){if(name.equals("minecraft:dirt_path"))protectedPathVoids++;else protectedFarmVoids++;}
@@ -192,7 +230,7 @@ public final class VillageWorldAudit implements ModInitializer {
                     if(gap&&gaps.size()<32){JsonObject e=new JsonObject();e.addProperty("x",x);e.addProperty("y",y);e.addProperty("z",z);e.addProperty("block",name);
                         e.addProperty("base_height",h);e.addProperty("grade_height",expected);e.addProperty("influence",column.influence());e.addProperty("first_gap_depth",first);e.addProperty("gap_block",gapBlock);gaps.add(e);}
                 }
-                if(name.endsWith("_door")&&b.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)&&b.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF)==DoubleBlockHalf.LOWER&&seenDoors.add(p.asLong())){
+                if(name.endsWith("_door")&&b.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)&&b.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF)==DoubleBlockHalf.LOWER&&seenDoors.add(pos.asLong())){
                     doors++;Direction f=b.getValue(BlockStateProperties.HORIZONTAL_FACING);boolean exit=false;
                     for(Direction d:List.of(f,f.getOpposite()))for(int dy=-1;dy<=1;dy++){
                         BlockPos q=new BlockPos(x,y,z).relative(d).offset(0,dy,0);
@@ -200,12 +238,30 @@ public final class VillageWorldAudit implements ModInitializer {
                     }if(!exit)blockedDoors++;
                 }
             }
+            if(roadY!=Integer.MIN_VALUE){
+                if(!roadBlock.equals("minecraft:dirt_path"))bridgeBlocks++;
+                var road=new JsonArray();road.add(x);road.add(roadY);road.add(z);road.add(roadBlock);roadSurface.add(road);
+            }
         }
         r.addProperty("full_sha256",hash(blocks));r.addProperty("path_blocks",pathBlocks);r.addProperty("path_columns_with_void_within_8",pathVoids);
+        r.addProperty("bridge_blocks",bridgeBlocks);r.add("road_surface",roadSurface);
+        r.add("full_palette",G.toJsonTree(fullPalette.keySet()));r.add("full_columns",fullColumns);
         r.addProperty("farmland_blocks",farmland);r.addProperty("farmland_columns_with_void_within_8",farmVoids);
         r.addProperty("protected_path_air_or_lava_columns",protectedPathVoids);r.addProperty("protected_farm_air_or_lava_columns",protectedFarmVoids);
         r.addProperty("protected_floor_lava_columns",protectedLava);
         r.addProperty("doors",doors);r.addProperty("door_exit_warnings",blockedDoors);r.add("support_warning_examples",gaps);return r;
+    }
+    private ChunkAccess fullChunk(int x,int z){
+        int cx=Math.floorDiv(x,16),cz=Math.floorDiv(z,16);
+        return observedFullChunks.computeIfAbsent(((long)cx<<32)|(cz&0xffffffffL),key->level.getChunk(cx,cz));
+    }
+    private static boolean isStreetBridge(String village,String block){
+        return switch(village){
+            case "minecraft:village_plains" -> block.equals("minecraft:oak_planks");
+            case "minecraft:village_savanna" -> block.equals("minecraft:acacia_planks");
+            case "minecraft:village_snowy","minecraft:village_taiga" -> block.equals("minecraft:spruce_planks");
+            default -> false;
+        };
     }
     private boolean passable(BlockPos p){var b=level.getBlockState(p);return b.getCollisionShape(level,p).isEmpty()&&b.getFluidState().isEmpty();}
 }

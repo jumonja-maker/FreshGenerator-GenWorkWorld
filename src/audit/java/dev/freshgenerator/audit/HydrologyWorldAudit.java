@@ -49,7 +49,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Plan(long seed, List<Window> windows) { }
     record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
                        Map<String, String> blocksAtMissingStages, List<String> blockPalette,
-                       int[] fullBlockStates, String nativeGeometrySha256) { }
+                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround) { }
     record TerrainFingerprint(Site site, String blocksSha256, String biomesSha256) { }
 
     @Override
@@ -216,6 +216,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         Map<String, String> missingStages = new TreeMap<>();
         Map<String, Integer> palette = new LinkedHashMap<>();
         int[] fullStates = normal ? new int[SIDE * SIDE * 384] : new int[0];
+        int[] modelGround = candidateHydrology ? new int[SIDE * SIDE] : new int[0];
         MessageDigest geometry = MessageDigest.getInstance("SHA-256");
         for (int dz = 0; dz < SIDE; dz++) {
             for (int dx = 0; dx < SIDE; dx++) {
@@ -279,6 +280,23 @@ public final class HydrologyWorldAudit implements ModInitializer {
                     biomes.merge(biome.unwrapKey().orElseThrow().identifier().toString(), 1, Integer::sum);
                 }
                 columns[i] = new int[]{surface, ground, water, bed, flags, window.profiles[i]};
+                if (candidateHydrology) {
+                    // Scan bare ground independently of the visible canopy or
+                    // waterlogged plants, including dry banks next to a profile.
+                    int from = profile == 0 ? surface : profile >> 16;
+                    modelGround[i] = MISSING;
+                    for (int y = from; y >= chunk.getMinY(); y--) {
+                        var state = chunk.getBlockState(pos.set(x, y, z));
+                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
+                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
+                                && !state.is(Blocks.ICE) && !state.is(Blocks.BROWN_MUSHROOM_BLOCK)
+                                && !state.is(Blocks.RED_MUSHROOM_BLOCK) && !state.is(Blocks.MUSHROOM_STEM)
+                                && state.getFluidState().isEmpty()) {
+                            modelGround[i] = y;
+                            break;
+                        }
+                    }
+                }
                 if (normal) {
                     for (int y = -64; y < 320; y++) {
                         String state = chunk.getBlockState(pos.set(x, y, z)).toString();
@@ -292,7 +310,8 @@ public final class HydrologyWorldAudit implements ModInitializer {
                 }
             }
         }
-        return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates, HexFormat.of().formatHex(geometry.digest()));
+        return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates,
+                HexFormat.of().formatHex(geometry.digest()), modelGround);
     }
 
     private static boolean isWater(BlockState state) {

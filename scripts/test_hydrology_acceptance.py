@@ -54,8 +54,14 @@ class HydrologyAcceptanceTests(unittest.TestCase):
         a, b, c = historical.VillageEvidenceTests().fixtures()
         old = copy.deepcopy(b); old.update(phase='published', source_commit=PUBLISHED)
         for report in (a, old, b, c):
-            report['hydrology_observer_schema'] = 2
+            report['hydrology_observer_schema'] = 3
             for terrain in report['terrain']: terrain.update(snapshot())
+            for row in report['villages']:
+                block = 'Block{minecraft:stone}'
+                row.update(full_palette=[block], full_columns=[[0, 0, 384, 0]],
+                           full_sha256=hashlib.sha256(((block + '\n') * 384).encode()).hexdigest(),
+                           bridge_blocks=0, road_surface=[[i, 70, 0, 'minecraft:dirt_path']
+                                                          for i in range(row['path_blocks'])])
         return [a, old, b, c]
 
     def test_complete_safe_village_is_accepted(self):
@@ -76,6 +82,19 @@ class HydrologyAcceptanceTests(unittest.TestCase):
                 with self.assertRaises(ValueError): village.validate(*reports, SHA, 42)
         reports = self.village_fixture(); reports[3]['villages'][0]['full_sha256'] = 'a' * 64
         with self.assertRaises(ValueError): village.validate(*reports, SHA, 42)
+
+    def test_native_water_crossing_must_preserve_the_same_road_columns(self):
+        reports = self.village_fixture()
+        for run in reports[2:]:
+            row = run['villages'][2]
+            row['road_surface'][0][3] = 'minecraft:oak_planks'
+            row['path_blocks'] -= 1
+            row['bridge_blocks'] += 1
+        self.assertEqual(3, village.validate(*reports, SHA, 42)['villages'])
+        for run in reports[2:]:
+            run['villages'][2]['road_surface'][0][0] = -100
+        with self.assertRaisesRegex(ValueError, 'Lost native village road columns'):
+            village.validate(*reports, SHA, 42)
 
     def normal_fixture(self):
         window = {'site': {'kind': 'control', 'x': 0, 'z': 0}, 'surfaceBiomes': {'minecraft:plains': 4},

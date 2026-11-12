@@ -20,6 +20,19 @@ def number(bits):
     return value
 
 
+def decode_runs(runs, palette, size):
+    require(len(runs) % 2 == 0, 'Malformed block runs')
+    states, previous = [], -1
+    for length, index in zip(runs[::2], runs[1::2]):
+        require(type(length) is int and 0 < length <= size - len(states), 'Invalid block run length')
+        require(type(index) is int and 0 <= index < len(palette) and index != previous,
+                'Invalid block run palette index')
+        states.extend([palette[index]] * length)
+        previous = index
+    require(len(states) == size, 'Incomplete block column')
+    return states
+
+
 def outside_rows(report):
     palette, rows = report['outside_palette'], report['outside_columns']
     require(isinstance(palette, list) and len(set(palette)) == len(palette), 'Invalid outside palette')
@@ -33,17 +46,51 @@ def outside_rows(report):
         require((x, z) not in seen, 'Duplicate outside coordinate')
         seen.add((x, z))
         number(original); number(current)
-        states, previous = [], -1
-        for length, index in zip(row[5::2], row[6::2]):
-            require(0 < length <= 192 - len(states), 'Invalid outside run length')
-            require(0 <= index < len(palette) and index != previous, 'Invalid outside run palette index')
-            states.extend([palette[index]] * length)
-            previous = index
-        require(len(states) == 192, 'Incomplete outside column')
+        states = decode_runs(row[5:], palette, 192)
         for i, state in enumerate(states):
             digest.update(f'{x},{-64+2*i},{z}={state}\n'.encode())
         result[x, z] = (original, current, profile, states)
     require(digest.hexdigest() == report['outside_sha256'], 'Outside snapshot/hash mismatch')
+    return result
+
+
+def full_rows(report):
+    palette, rows = report['full_palette'], report['full_columns']
+    require(palette and all(isinstance(s, str) and s for s in palette) and len(set(palette)) == len(palette),
+            'Invalid FULL block palette')
+    require(isinstance(rows, list) and rows, 'Missing FULL columns')
+    result, digest = {}, hashlib.sha256()
+    for x, z, *runs in rows:
+        require(type(x) is int and type(z) is int and (x, z) not in result, 'Invalid FULL coordinates')
+        states = decode_runs(runs, palette, 384)
+        digest.update(('\n'.join(states) + '\n').encode())
+        result[x, z] = states
+    require(digest.hexdigest() == report['full_sha256'], 'FULL snapshot/hash mismatch')
+    return result
+
+
+def check_reload(before, after):
+    old, new = full_rows(before), full_rows(after)
+    require(old.keys() == new.keys(), 'FULL sampling coordinates changed on reload')
+    for (x, z), states in old.items():
+        for y, (a, b) in enumerate(zip(states, new[x, z]), -64):
+            require(a == b, f'FULL village block changed on reload at {x},{y},{z}: {a} -> {b}')
+    metadata = {'full_columns', 'full_palette'}
+    require({k: v for k, v in before.items() if k not in metadata} ==
+            {k: v for k, v in after.items() if k not in metadata}, 'FULL village measurements changed on reload')
+
+
+def road_columns(report):
+    require(type(report['bridge_blocks']) is int and report['bridge_blocks'] >= 0, 'Invalid bridge count')
+    result, paths, bridges = set(), 0, 0
+    states = {'minecraft:dirt_path', 'minecraft:oak_planks', 'minecraft:acacia_planks', 'minecraft:spruce_planks'}
+    for x, y, z, block in report['road_surface']:
+        require(all(type(v) is int for v in (x, y, z)) and block in states, 'Invalid village road block')
+        require((x, z) not in result, 'Overlapping village road surface')
+        result.add((x, z))
+        paths += block == 'minecraft:dirt_path'
+        bridges += block != 'minecraft:dirt_path'
+    require(paths <= report['path_blocks'] and bridges == report['bridge_blocks'], 'Road inventory/count mismatch')
     return result
 
 
@@ -81,14 +128,15 @@ def validate(baseline, published, candidate, reload, sha, seed):
                                 (candidate, 'candidate', sha), (reload, 'reload', sha)):
         require(data['completed'] is True and data['seed'] == seed and data['phase'] == phase
                 and data['source_commit'] == source, 'Wrong/incomplete village evidence')
-        require(data['hydrology_observer_schema'] == 2, 'Missing hydrology-aware raw evidence')
+        require(data['hydrology_observer_schema'] == 3, 'Missing hydrology-aware raw evidence')
         require(data['settings'] == 'freshgenerator:highlands_v2', 'Wrong village world')
         require(type(data['explicit_full_chunks']) is int and data['explicit_full_chunks'] > 0, 'No FULL village chunks')
         require(len(data['villages']) == len(data['terrain']) >= 3, 'Missing village coverage')
         require(len({(v['id'],v['chunkX'],v['chunkZ']) for v in data['villages']}) == len(data['villages']), 'Duplicate village')
     require(len(baseline['villages']) == len(published['villages']) == len(candidate['villages']) == len(reload['villages']),
             'Unpaired village coverage')
-    require(candidate['villages'] == reload['villages'], 'FULL village changed on reload')
+    for before, after in zip(candidate['villages'], reload['villages']):
+        check_reload(before, after)
     require(any(v['id'] == 'minecraft:village_savanna' for v in candidate['villages']), 'No savanna coverage')
     terrain_checks = []
     for base, old, new in zip(baseline['terrain'], published['terrain'], candidate['terrain']):
@@ -109,8 +157,10 @@ def validate(baseline, published, candidate, reload, sha, seed):
         counts(old, FULL_COUNTS); counts(new, FULL_COUNTS)
         fingerprint(old['full_sha256']); fingerprint(new['full_sha256'])
         require(new['doors'] == old['doors'] > 0, 'Lost village doors')
-        for field in ('path_blocks', 'farmland_blocks'):
-            require(new[field] >= old[field], 'Lost native village content: ' + field)
+        old_roads, new_roads = road_columns(old), road_columns(new)
+        missing_roads = old_roads - new_roads
+        require(not missing_roads, f'Lost native village road columns: {sorted(missing_roads)[:16]}')
+        require(new['farmland_blocks'] >= old['farmland_blocks'], 'Lost native village farmland')
         for field in ('path_columns_with_void_within_8', 'farmland_columns_with_void_within_8', 'door_exit_warnings'):
             require(new[field] <= old[field], 'Village safety regressed: ' + field)
         for field in ('protected_path_air_or_lava_columns', 'protected_farm_air_or_lava_columns', 'protected_floor_lava_columns'):
@@ -119,10 +169,15 @@ def validate(baseline, published, candidate, reload, sha, seed):
         require(sum(v[field] for v in published['villages']) > 0, 'Missing native coverage: ' + field)
     return {'source_commit': sha, 'reference_commit': PUBLISHED, 'seed': seed,
             'actual_server_runs': 4, 'villages': len(candidate['villages']),
-            'full_before': published['villages'], 'full_after': candidate['villages'],
+            'full_before': [summarize_full(v) for v in published['villages']],
+            'full_after': [summarize_full(v) for v in candidate['villages']],
             'saved_world_equal': True, 'deep_blocks_identical_at_fixed_coordinates': True,
             'outside_terrain': terrain_checks,
             'limits': 'Paired real villages; changed outside blocks are permitted only in the independently recorded hydrology envelope. FULL decorative blocks outside protected plots may change with the new landscape. No villager AI test.'}
+
+
+def summarize_full(report):
+    return {k: v for k, v in report.items() if k not in {'full_palette', 'full_columns', 'road_surface'}}
 
 
 def compare(folder, sha, seed):

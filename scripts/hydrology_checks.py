@@ -65,6 +65,10 @@ def neighbours(index):
         yield index + SIDE
 
 
+def shares_water(a, b):
+    return min(a[2], b[2]) > max(a[3], b[3])
+
+
 def connected(columns, selected):
     largest, components = 0, 0
     remaining = set(selected)
@@ -80,13 +84,30 @@ def connected(columns, selected):
                     continue
                 a, b = columns[index], columns[other]
                 # Two neighboring columns share water at an equal elevation.
-                if min(a[2], b[2]) <= max(a[3], b[3]):
+                if not shares_water(a, b):
                     continue
                 remaining.remove(other)
                 queue.append(other)
                 size += 1
         largest = max(largest, size)
     return components, largest
+
+
+def spillway_metrics(columns, matched):
+    lake = {i for i in matched if columns[i][5] & 3 == 3}
+    stream = {i for i in matched if not columns[i][5] & 1}
+    stage = max((columns[i][2] for i in lake), default=None)
+    contacts = {j for i in lake for j in neighbours(i)
+                if j in stream and columns[j][2] == stage and shares_water(columns[i], columns[j])}
+    downstream = set(contacts)
+    queue = deque(contacts)
+    while queue:
+        i = queue.popleft()
+        for j in neighbours(i):
+            if j in stream and j not in downstream and columns[j][2] <= columns[i][2] and shares_water(columns[i], columns[j]):
+                downstream.add(j)
+                queue.append(j)
+    return len(contacts), sum(columns[i][2] < stage for i in downstream)
 
 
 def window_metrics(window, baseline_window):
@@ -103,6 +124,7 @@ def window_metrics(window, baseline_window):
         site['x'] + i % SIDE - RADIUS, site['z'] + i // SIDE - RADIUS))]
     matched_set = set(matched)
     components, largest = connected(columns, matched)
+    spillway_contacts, downstream = spillway_metrics(columns, matched)
     dry_bank_neighbours = {(i, j) for i in matched for j in neighbours(i)
                            if columns[j][2] == MISSING and columns[j][1] < columns[i][2]}
     return {
@@ -122,6 +144,8 @@ def window_metrics(window, baseline_window):
         'near_bed_lava_columns': sum(bool(columns[i][4] & 8) for i in matched),
         'water_connected_components': components,
         'largest_water_component_columns': largest,
+        'wet_spillway_contacts': spillway_contacts,
+        'connected_lower_spillway_columns': downstream,
         'possible_exposed_bank_edges': len(dry_bank_neighbours),
         'planned_chunk_edge_columns': len(chunk_edges),
         'matched_chunk_edge_columns': len(matched_set.intersection(chunk_edges)),
@@ -133,7 +157,9 @@ def window_metrics(window, baseline_window):
 
 
 def hydrology_signature(result):
-    return [[(c[2], c[3], c[4] & (1 | 2 | 4 | 8)) for c in w['columns'] if c[5]] for w in result['windows']]
+    return [[(i, c[2], c[3], c[4] & 15, w['modelGround'][i]) if c[5] else (i, w['modelGround'][i])
+             for i, c in enumerate(w['columns']) if c[5] or any(w['columns'][j][5] for j in neighbours(i))]
+            for w in result['windows']]
 
 
 def compare_normal(references, candidate):
@@ -224,6 +250,7 @@ def compare(folder, sha, seed, *, require_dh=False):
                 f"Missing water in {row['kind']}")
         require(row['unsupported_bed_columns'] == row['near_bed_lava_columns'] == 0,
                 f"Unsafe bed in {row['kind']}")
+        require(row['possible_exposed_bank_edges'] == 0, f"Unsealed bank in {row['kind']}")
     require(any(r['matched_tile_edge_columns'] > 0 for r in rows), 'No observed water across a tile edge')
     return {
         'source_commit': sha, 'seed': seed, 'actual_server_runs': len(modes),
