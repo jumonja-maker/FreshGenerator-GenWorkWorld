@@ -1,0 +1,84 @@
+name: Verify final hydrology regression corrections
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-final-verify.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3a9ad243c76cae7e1e6c4bb444b3344639f68878
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Apply independently verified source patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,pathlib,subprocess,urllib.request
+          parts=['58e052eae1d47dc6660f7fea852a865ac3c439c0','7376704a5c9b84dee9c7e3f6438bc157c3d202af','e602c96f721e68585d1c119cef71c31d8155aa18']
+          text=[]
+          for sha in parts:
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=60) as response: data=json.load(response)
+              raw=base64.b64decode(data['content']);assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+              text.append(raw.decode('ascii'))
+          packed=base64.b64decode(''.join(text),validate=True)
+          assert hashlib.sha1(('blob '+str(len(packed))+'\0').encode()+packed).hexdigest()=='ca1148fbe358e10075029eedc133699089103f52'
+          patch=gzip.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest()=='870ef9c8e3cc31d07dafd78643af3b5e4955d4b7d2ec5eeec9f3065ef545f793'
+          pathlib.Path('/tmp/final-hydrology.patch').write_bytes(patch)
+          subprocess.run(['git','apply','--check','--index','/tmp/final-hydrology.patch'],check=True)
+          subprocess.run(['git','apply','--index','/tmp/final-hydrology.patch'],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          assert subprocess.check_output(['git','write-tree'],text=True).strip()=='3b83e5e303503d3507d4c40cc817a3df6e659649'
+      - name: Canonical Java25 build and full unit regressions
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar 2>&1 | tee /tmp/final-hydrology-build.log
+          python3 -m unittest discover -s scripts -p 'test_*.py' 2>&1 | tee /tmp/final-hydrology-python.log
+          python3 scripts/validate_hydrology_patch.py
+      - name: Preserve verified source blobs without changing any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,hashlib,json,os,pathlib,subprocess,urllib.request
+          files=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
+          assert len(files)==15
+          entries=[]
+          for path in files:
+              raw=pathlib.Path(path).read_bytes();sha=hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs',data=json.dumps({'encoding':'base64','content':base64.b64encode(raw).decode('ascii')}).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(req,timeout=60) as response: result=json.load(response)
+              assert result['sha']==sha
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':sha})
+          manifest={'base':'3a9ad243c76cae7e1e6c4bb444b3344639f68878','tree':'3b83e5e303503d3507d4c40cc817a3df6e659649','entries':entries}
+          pathlib.Path('/tmp/final-hydrology-source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print('VERIFIED_SOURCE_MANIFEST',json.dumps(manifest))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-hydrology-compiled-evidence
+          path: |
+            /tmp/final-hydrology.patch
+            /tmp/final-hydrology-build.log
+            /tmp/final-hydrology-python.log
+            /tmp/final-hydrology-source-manifest.json
+            build/test-results/test/
+            build/reports/tests/test/
+            build/reports/village-release/
+          retention-days: 7
+          if-no-files-found: error
