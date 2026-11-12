@@ -1,0 +1,52 @@
+name: Inspect hydrology native contracts
+on:
+  push:
+    branches: [audit/hydrology-evidence-resume]
+    paths: [.github/workflows/hydrology-native-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - name: Inspect exact Minecraft server bytecode
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/api game
+          curl -fsSL --retry 3 'https://piston-data.mojang.com/v1/objects/33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c/server.jar' -o game/server.jar
+          echo '33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c  game/server.jar' | sha1sum -c
+          cd game
+          jar xf server.jar META-INF/versions
+          inner=$(find META-INF/versions -name '*.jar' | head -1)
+          jar tf "$inner" | grep -E 'Snow.*Feature|Freeze.*Feature' | tee ../evidence/api/classes.txt
+          for class in net.minecraft.world.level.levelgen.feature.SnowAndFreezeFeature net.minecraft.world.level.biome.Biome net.minecraft.world.level.WorldGenLevel; do
+            javap -classpath "$inner" -c -p "$class" > "../evidence/api/${class##*.}.txt"
+          done
+      - name: Decode paired village reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,pathlib,urllib.request
+          sha='168603235e9032e61f91a9c66540555ca5b72b96'
+          req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=60) as response: raw=base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+          bundle=json.loads(gzip.decompress(raw))
+          assert bundle['identity']['GITHUB_SHA']=='14254dfab64063990e8a695c2de7e350ba1958cc'
+          for name,entry in bundle['files'].items():
+              assert '..' not in pathlib.PurePosixPath(name).parts and not name.startswith('/')
+              data=base64.b64decode(entry['content']);assert hashlib.sha256(data).hexdigest()==entry['sha256']
+              target=pathlib.Path('evidence/village')/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hydrology-native-contracts
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: error
