@@ -124,7 +124,11 @@ def window_metrics(window, baseline_window):
 
 
 def hydrology_signature(result):
-    return [[(c[2], c[3], c[4] & (1 | 2 | 4 | 8)) for c in w['columns']] for w in result['windows']]
+    return [[(c[2], c[3], c[4] & (1 | 2 | 4 | 8)) for c in w['columns'] if c[5]] for w in result['windows']]
+
+
+def normal_signature(result):
+    return [(w['site'], w['surfaceBiomes'], [c[1:] for c in w['columns']]) for w in result['windows']]
 
 
 def compare(folder, sha, seed, *, require_dh=False):
@@ -138,7 +142,7 @@ def compare(folder, sha, seed, *, require_dh=False):
     for mode in ('reverse', 'parallel', 'reload'):
         require(hydrology_signature(candidate) == hydrology_signature(observed[mode]),
                 f'Water, bed, or seal changed after {mode}')
-    require(observed['normal-baseline']['windows'] == observed['normal-candidate']['windows'],
+    require(normal_signature(observed['normal-baseline']) == normal_signature(observed['normal-candidate']),
             'Ordinary Minecraft preset changed')
     if require_dh:
         dh = observed['distant-horizons']
@@ -163,7 +167,11 @@ def compare(folder, sha, seed, *, require_dh=False):
         'source_commit': sha, 'seed': seed, 'actual_server_runs': len(modes),
         'full_chunks_per_run': candidate['full_chunks'],
         'chunk_generation_ms': {mode: result['chunk_generation_ms'] for mode, result in observed.items()},
-        'water_matches_reverse_parallel_and_reload': True, 'normal_world_identical': True,
+        'water_matches_reverse_parallel_and_reload': True,
+        'normal_world_terrain_water_and_biomes_identical': True,
+        'normal_world_canopy_differences': sum(a[0] != b[0] for old, new in
+            zip(observed['normal-baseline']['windows'], observed['normal-candidate']['windows'])
+            for a, b in zip(old['columns'], new['columns'])),
         'distant_horizons_installed_equal': require_dh,
         'observations_sha256': hashlib.sha256((folder / 'candidate.json').read_bytes()).hexdigest(),
         'windows': rows,

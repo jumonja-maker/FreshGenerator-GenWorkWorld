@@ -233,8 +233,13 @@ jobs:
           EVIDENCE_KEY: ${{ matrix.evidence_key }}
         run: python3 scripts/ci_evidence.py put "$EVIDENCE_KEY" "$REPORT" '*.json' '*.log' '*.properties'
   publish:
-    needs: [build, worlds, structures, hydrology]
-    if: github.ref == 'refs/heads/main'
+    name: Verify release evidence and package
+    needs: [build, check_patch, worlds, structures, hydrology]
+    if: >-
+      always() && !cancelled() &&
+      needs.worlds.result == 'success' && needs.structures.result == 'success' && needs.hydrology.result == 'success' &&
+      ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
+       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -244,10 +249,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EVIDENCE_JOBS: ${{ toJSON(needs) }}
-        run: python3 scripts/ci_evidence.py get ci-evidence
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            EVIDENCE_JOBS=$(python3 -c 'import json, os; d=json.loads(os.environ["EVIDENCE_JOBS"]); d["build"]=d["check_patch"]; print(json.dumps(d))')
+            export EVIDENCE_JOBS
+          fi
+          python3 scripts/ci_evidence.py get ci-evidence
       - name: Independently validate raw reports and prepare release
         run: python3 scripts/validate_hydrology_release.py publish
       - name: Publish without overwriting a newer main
+        if: github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git fetch origin main

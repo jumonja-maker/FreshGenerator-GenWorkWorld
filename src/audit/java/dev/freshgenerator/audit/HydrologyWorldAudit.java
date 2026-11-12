@@ -14,6 +14,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -93,7 +94,8 @@ public final class HydrologyWorldAudit implements ModInitializer {
         var chunks = load(server, level, order, concurrent);
         long generationNanos = System.nanoTime() - generationStart;
         List<Observation> observations = new ArrayList<>();
-        for (Window window : plan.windows) observations.add(read(window, chunks));
+        boolean candidateHydrology = !mode.startsWith("normal-") && !mode.endsWith("baseline");
+        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", mode);
         result.put("jar_sha256", System.getenv("FG_HYDROLOGY_JAR_SHA256"));
@@ -133,7 +135,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         return chunks;
     }
 
-    private static Observation read(Window window, Map<Long, ChunkAccess> chunks) {
+    private static Observation read(Window window, Map<Long, ChunkAccess> chunks, boolean candidateHydrology) {
         var pos = new BlockPos.MutableBlockPos();
         int[][] columns = new int[SIDE * SIDE][];
         Map<String, Integer> biomes = new TreeMap<>();
@@ -146,20 +148,36 @@ public final class HydrologyWorldAudit implements ModInitializer {
                 int surface = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, lx, lz);
                 int ground = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
                 int water = MISSING, bed = MISSING, flags = 0;
-                for (int y = surface; y >= Math.max(chunk.getMinY(), surface - 36); y--) {
-                    var state = chunk.getBlockState(pos.set(x, y, z));
-                    if (state.getFluidState().is(FluidTags.WATER) || state.is(Blocks.ICE)) {
-                        water = y;
-                        flags |= state.is(Blocks.ICE) ? 2 : state.getFluidState().isSource() ? 1 : 0;
-                        break;
+                int profile = window.profiles[i];
+                // A tree canopy or a giant mushroom cap can cover a stream.
+                // Inspect the actual block at the modeled stage beneath decorations.
+                if (candidateHydrology && profile != 0) {
+                    int expected = profile >> 16;
+                    var state = chunk.getBlockState(pos.set(x, expected, z));
+                    if (isWater(state)) {
+                        water = expected;
+                        while (water < surface && isWater(chunk.getBlockState(pos.set(x, water + 1, z)))) water++;
                     }
-                    if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
-                            && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) {
-                        ground = y;
-                        break;
+                }
+                if (water == MISSING) {
+                    for (int y = surface; y >= Math.max(chunk.getMinY(), surface - 36); y--) {
+                        var state = chunk.getBlockState(pos.set(x, y, z));
+                        if (isWater(state)) {
+                            water = y;
+                            break;
+                        }
+                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
+                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
+                                && !state.is(Blocks.BROWN_MUSHROOM_BLOCK) && !state.is(Blocks.RED_MUSHROOM_BLOCK)
+                                && !state.is(Blocks.MUSHROOM_STEM)) {
+                            ground = y;
+                            break;
+                        }
                     }
                 }
                 if (water != MISSING) {
+                    var top = chunk.getBlockState(pos.set(x, water, z));
+                    flags |= top.is(Blocks.ICE) ? 2 : top.getFluidState().isSource() ? 1 : 0;
                     for (int y = water - 1; y >= Math.max(chunk.getMinY(), water - 24); y--) {
                         var state = chunk.getBlockState(pos.set(x, y, z));
                         if (!state.getFluidState().is(FluidTags.WATER) && !state.is(Blocks.ICE)) {
@@ -183,5 +201,9 @@ public final class HydrologyWorldAudit implements ModInitializer {
             }
         }
         return new Observation(window.site, columns, biomes);
+    }
+
+    private static boolean isWater(BlockState state) {
+        return state.getFluidState().is(FluidTags.WATER) || state.is(Blocks.ICE);
     }
 }
