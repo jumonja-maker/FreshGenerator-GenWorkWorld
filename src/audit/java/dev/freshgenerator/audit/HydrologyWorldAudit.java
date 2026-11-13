@@ -49,11 +49,15 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Plan(long seed, List<Window> windows) { }
     record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
                        Map<String, String> blocksAtMissingStages, List<String> blockPalette,
-                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround, Map<String, String> groundStates) { }
+                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround, Map<String, String> groundStates, Map<String, String> bankPlantStates) { }
     record TerrainFingerprint(Site site, String blocksSha256, String biomesSha256) { }
 
     @Override
     public void onInitialize() {
+        if ("true".equals(System.getenv("FG_HYDROLOGY_SETTLE"))) {
+            new HydrologySettlingAudit().onInitialize();
+            return;
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
                 var result = inspect(server);
@@ -68,7 +72,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         });
     }
 
-    private static Map<String, Object> inspect(MinecraftServer server) throws Exception {
+    static Map<String, Object> inspect(MinecraftServer server) throws Exception {
         ServerLevel level = server.overworld();
         var generator = (NoiseBasedChunkGenerator) level.getChunkSource().getGenerator();
         String mode = System.getenv().getOrDefault("FG_HYDROLOGY_MODE", "candidate");
@@ -208,6 +212,34 @@ public final class HydrologyWorldAudit implements ModInitializer {
         return chunks;
     }
 
+    /** The native OCEAN_FLOOR predicate also counts bamboo, pumpkins and melons.
+     * Reproduced in paired FULL chunks at (3952,-658), seed 1337, and
+     * (-187,-833), seed 801086821803359396. They can decorate unchanged soil
+     * in a different feature order. Do not remove them from the world or skip
+     * a terrain interval: inspect every lower block and retain unknown solids.
+     * A melon at (4026,90,-576), seed 1337, likewise raised the reported
+     * bank by one block in CI 43484450924 without establishing the soil below.
+     * Water stages, exact beds and unsupported/lava flags are checked separately. */
+    static boolean isBankPlant(BlockState state) {
+        return state.is(Blocks.BAMBOO) || state.is(Blocks.PUMPKIN) || state.is(Blocks.MELON);
+    }
+
+    static boolean isBareGround(BlockState state) {
+        return isBareGround(state, Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state));
+    }
+
+    // Native opacity uses data-driven block properties loaded by a real server.
+    // The overload allows unit tests to exercise the audit classification without
+    // pretending a standalone registry bootstrap has loaded those properties.
+    static boolean isBareGround(BlockState state, boolean nativeOpaque) {
+        return nativeOpaque
+                && state.getFluidState().isEmpty()
+                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
+                && !state.is(Blocks.ICE) && !state.is(Blocks.BROWN_MUSHROOM_BLOCK)
+                && !state.is(Blocks.RED_MUSHROOM_BLOCK) && !state.is(Blocks.MUSHROOM_STEM)
+                && !isBankPlant(state);
+    }
+
     private static Observation read(Window window, Map<Long, ChunkAccess> chunks, boolean candidateHydrology,
                                     boolean normal, ServerLevel level, NoiseBasedChunkGenerator generator) throws Exception {
         var pos = new BlockPos.MutableBlockPos();
@@ -218,6 +250,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         int[] fullStates = normal ? new int[SIDE * SIDE * 384] : new int[0];
         int[] modelGround = candidateHydrology ? new int[SIDE * SIDE] : new int[0];
         Map<String, String> groundStates = new TreeMap<>();
+        Map<String, String> bankPlantStates = new TreeMap<>();
         MessageDigest geometry = MessageDigest.getInstance("SHA-256");
         for (int dz = 0; dz < SIDE; dz++) {
             for (int dx = 0; dx < SIDE; dx++) {
@@ -249,10 +282,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
                             water = y;
                             break;
                         }
-                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
-                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
-                                && !state.is(Blocks.BROWN_MUSHROOM_BLOCK) && !state.is(Blocks.RED_MUSHROOM_BLOCK)
-                                && !state.is(Blocks.MUSHROOM_STEM)) {
+                        if (isBareGround(state)) {
                             ground = y;
                             break;
                         }
@@ -288,11 +318,10 @@ public final class HydrologyWorldAudit implements ModInitializer {
                     modelGround[i] = MISSING;
                     for (int y = from; y >= chunk.getMinY(); y--) {
                         var state = chunk.getBlockState(pos.set(x, y, z));
-                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
-                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
-                                && !state.is(Blocks.ICE) && !state.is(Blocks.BROWN_MUSHROOM_BLOCK)
-                                && !state.is(Blocks.RED_MUSHROOM_BLOCK) && !state.is(Blocks.MUSHROOM_STEM)
-                                && state.getFluidState().isEmpty()) {
+                        // Preserve the actual above-ground decoration in raw evidence;
+                        // it is not terrain, and must not hide missing/replaced soil.
+                        if (isBankPlant(state)) bankPlantStates.put(x + "," + y + "," + z, state.toString());
+                        if (isBareGround(state)) {
                             modelGround[i] = y;
                             groundStates.put(x + "," + y + "," + z, state.toString());
                             break;
@@ -313,7 +342,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
             }
         }
         return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates,
-                HexFormat.of().formatHex(geometry.digest()), modelGround, groundStates);
+                HexFormat.of().formatHex(geometry.digest()), modelGround, groundStates, bankPlantStates);
     }
 
     private static boolean isWater(BlockState state) {

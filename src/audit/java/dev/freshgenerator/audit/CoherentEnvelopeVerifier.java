@@ -25,6 +25,23 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         return server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION).getOrThrow(
                 ResourceKey.create(Registries.DENSITY_FUNCTION,Identifier.parse(P+name))).value();
     }
+    /** Independent observation contract: positive relief may not refill an excavation.
+     * Unlike a tolerance waiver, the exact cap is required only in its declared
+     * interval; negative detail and every unexcavated column retain their signal.
+     */
+    static double expectedAlpineCorrection(double relief, double cut) {
+        if (!Double.isFinite(relief) || !Double.isFinite(cut))
+            throw new AssertionError("Nonfinite alpine correction inputs");
+        return cut >= 0.25 && cut < 19 ? Math.min(0, relief) : relief;
+    }
+    static void requireAlpineCorrection(double old, double now, double relief, double cut) {
+        if (!Double.isFinite(old) || !Double.isFinite(now) || Math.abs(relief) > 0.1201)
+            throw new AssertionError("Nonfinite or unbounded 3-D alpine density");
+        double expected = expectedAlpineCorrection(relief, cut);
+        if (Math.abs((now - old) - expected) > 2e-4)
+            throw new AssertionError("Unexpected alpine density correction: old=" + old
+                    + " now=" + now + " raw=" + relief + " cut=" + cut + " expected=" + expected);
+    }
     /** Real native density and single-surface checks across independent alpine districts. */
     private static JsonObject verifyAlpineDetail(MinecraftServer server,RandomState state,DensityFunction height){
         var registry=server.registryAccess().lookupOrThrow(Registries.DENSITY_FUNCTION);
@@ -33,6 +50,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         var original=function(server,"detail/original_surface_density");
         var detail=function(server,"detail/rock_relief");
         var surface=function(server,"surface_density");
+        var excavation=function(server,"hydrology/cut");
         record Peak(int x,int z,float height,float mountain) {}
         List<Peak> candidates=new ArrayList<>();
         for(int x=-8192;x<=8192;x+=384)for(int z=-8192;z<=8192;z+=384){
@@ -49,21 +67,34 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         }
         int cols=0,voxels=0,changed=0,signReversals=0,deep=0,high=0;
         double maxAbs=0,minRelief=Double.POSITIVE_INFINITY,maxRelief=Double.NEGATIVE_INFINITY;
+        int cappedPositive=0;
+        JsonArray capExamples=new JsonArray();
         for(var p:peaks)for(int dx=-16;dx<=16;dx+=8)for(int dz=-16;dz<=16;dz+=8){
             int x=p.x()+dx,z=p.z()+dz,center=(int)Math.floor(
                 state.sampleBlockValueUncached(height,x,0,z));
+            double cut=state.sampleBlockValueUncached(excavation,x,0,z);
             boolean seenAir=false;
             for(int y=center-12;y<=center+12;y++){
                 double d=state.sampleBlockValueUncached(detail,x,y,z);
                 double old=state.sampleBlockValueUncached(original,x,y,z);
                 double now=state.sampleBlockValueUncached(surface,x,y,z);
-                if(!Double.isFinite(d)||!Double.isFinite(now)||!Double.isFinite(old))
-                    throw new AssertionError("Nonfinite 3-D alpine density");
-                if(Math.abs((now-old)-d)>2e-4)
-                    throw new AssertionError("Unexpected alpine density correction");
+                try { requireAlpineCorrection(old,now,d,cut); }
+                catch(AssertionError failure) { throw new AssertionError("Alpine sample at "
+                        +x+","+y+","+z+": "+failure.getMessage(),failure); }
+                double applied=now-old;
+                if(cut>=0.25&&cut<19&&d>2e-4) {
+                    cappedPositive++;
+                    if(capExamples.size()<8) {
+                        JsonObject example=new JsonObject();
+                        example.addProperty("x",x);example.addProperty("y",y);example.addProperty("z",z);
+                        example.addProperty("excavation",cut);example.addProperty("raw_relief",d);
+                        example.addProperty("original_density",old);example.addProperty("actual_density",now);
+                        capExamples.add(example);
+                    }
+                }
                 maxAbs=Math.max(maxAbs,Math.abs(d));
                 minRelief=Math.min(minRelief,d);maxRelief=Math.max(maxRelief,d);
-                if(Math.abs(d)>.003)changed++;
+                if(Math.abs(applied)>.003)changed++;
                 if(y<=center-10){deep++;if(Math.abs(d)>1e-6)throw new AssertionError("Detail leaked deep");}
                 if(y>=center+10){high++;if(Math.abs(d)>1e-6)throw new AssertionError("Detail leaked above top");}
                 if(now<=0)seenAir=true;
@@ -81,6 +112,8 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         out.addProperty("max_absolute_density_correction",maxAbs);
         out.addProperty("min_relief",minRelief);out.addProperty("max_relief",maxRelief);
         out.addProperty("sign_reversals",signReversals);
+        out.addProperty("excavated_positive_relief_caps",cappedPositive);
+        out.add("excavation_cap_examples",capExamples);
         out.addProperty("deep_zero_checks",deep);out.addProperty("high_zero_checks",high);
         System.out.println("FRESHGENERATOR_ALPINE_DETAIL_PASS "+out);
         return out;
@@ -129,6 +162,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         r.addProperty("deep_cave_weight_samples",deep);r.addProperty("native_deep_cavity_samples",deepCavities);
         r.addProperty("max_sampled_height_step_per_block",maxNeighbourStep);
         r.add("alpine_detail",verifyAlpineDetail(server,state,height));
+        r.add("native_density_cache",NativeDensityCacheVerifier.verify(server,state));
         r.addProperty("scope","native density sampling; FULL topology and structures are audited separately; not a screenshot reproduction");
         Files.writeString(Path.of("freshgenerator-envelope.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r)+"\n");
         System.out.println("FRESHGENERATOR_ENVELOPE_PASS "+r);

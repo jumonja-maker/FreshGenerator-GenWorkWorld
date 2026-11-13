@@ -24,6 +24,8 @@ public final class HydrologyCompiler {
     private static final String COHERENT = PREFIX + "coherent/";
     private static final String HYDROLOGY = PREFIX + "coherent/hydrology/";
     private static final String MODEL = HYDROLOGY + "model";
+    public static final String SURFACE = path(COHERENT + "surface_density");
+    public static final String NATIVE_CAVES = path(COHERENT + "native_cave_body");
     public static final String HEIGHT = path(COHERENT + "height");
     public static final String CAVE_WEIGHT = path(COHERENT + "cave_weight");
     public static final String PRELIMINARY = path(PREFIX + "preliminary_surface_level");
@@ -35,6 +37,8 @@ public final class HydrologyCompiler {
 
     public static void apply(Map<String, JsonElement> out) {
         JsonElement original = Objects.requireNonNull(out.get(HEIGHT), "Missing coherent height");
+        JsonElement originalSurface = Objects.requireNonNull(out.get(SURFACE), "Missing coherent surface");
+        JsonElement originalNativeCaves = Objects.requireNonNull(out.get(NATIVE_CAVES), "Missing native cave body");
         JsonElement originalCaves = Objects.requireNonNull(out.get(CAVE_WEIGHT), "Missing cave envelope");
         JsonObject settings = Objects.requireNonNull(out.get(BiomeRegionCompiler.SETTINGS), "Missing Overworld settings")
                 .getAsJsonObject().deepCopy();
@@ -112,6 +116,29 @@ public final class HydrologyCompiler {
         out.putAll(climate);
         out.put(HEIGHT, height);
         out.put(CAVE_WEIGHT, caveWeight);
+        // A wet column always excavates at least 0.25 blocks. Positive 3-D
+        // mountain relief must not put rock back above that excavated envelope:
+        // on seed -20261111 a planned Y168 lake otherwise became dry soil.
+        // Keep negative rock relief, untouched columns, raised banks and the
+        // native final-density beardifier/blending graph. This caps the exterior
+        // before native fill; it does not erase structures or edit FULL chunks.
+        JsonObject surfaceLimit = new JsonObject();
+        surfaceLimit.addProperty("type", "minecraft:range_choice");
+        surfaceLimit.addProperty("input", HYDROLOGY + "cut");
+        surfaceLimit.addProperty("min_inclusive", 0.25);
+        surfaceLimit.addProperty("max_exclusive", 19);
+        JsonObject excavated = new JsonObject();
+        excavated.addProperty("type", "minecraft:min");
+        excavated.add("left", originalSurface.deepCopy());
+        excavated.addProperty("right", COHERENT + "detail/original_surface_density");
+        surfaceLimit.add("when_in_range", excavated);
+        surfaceLimit.add("when_out_of_range", originalSurface.deepCopy());
+        // Both functions are shared by final density and alpine detail. Native
+        // per-SamplerContext caches reuse their exact results; do not simplify,
+        // resample or move any arithmetic, interpolation, seed or blend input.
+        // In particular, this is not a global cache across chunks or worlds.
+        out.put(SURFACE, cache(surfaceLimit));
+        out.put(NATIVE_CAVES, cache(originalNativeCaves.deepCopy()));
         out.put(PRELIMINARY, preliminary);
         out.put(BiomeRegionCompiler.SETTINGS, settings);
     }

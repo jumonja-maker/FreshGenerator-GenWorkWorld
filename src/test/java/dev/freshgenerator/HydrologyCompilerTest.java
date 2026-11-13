@@ -37,11 +37,39 @@ class HydrologyCompilerTest {
             assertTrue(candidate.containsKey(path), path);
             if (!original.equals(candidate.get(path))) changed.add(path);
         });
-        assertEquals(Set.of(HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, HydrologyCompiler.PRELIMINARY, BiomeRegionCompiler.SETTINGS,
+        assertEquals(Set.of(HydrologyCompiler.SURFACE, HydrologyCompiler.NATIVE_CAVES, HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, HydrologyCompiler.PRELIMINARY, BiomeRegionCompiler.SETTINGS,
                 HydrologyCompiler.BIOME_DEPTH, HydrologyCompiler.BIOME_TEMPERATURE, HydrologyCompiler.BIOME_MOISTURE), changed);
         assertEquals(baseline.size() + 7, candidate.size());
         assertEquals(baseline.get(HydrologyCompiler.HEIGHT), candidate.get(path(HYDROLOGY + "base_height")));
         assertEquals(baseline.get(HydrologyCompiler.CAVE_WEIGHT), candidate.get(path(HYDROLOGY + "base_cave_weight")));
+    }
+
+    @Test
+    void sharedNativeCavesAreWrappedWithoutChangingAnyInput() {
+        var cached = candidate.get(HydrologyCompiler.NATIVE_CAVES).getAsJsonObject();
+        assertEquals(Set.of("type", "input"), cached.keySet());
+        assertEquals("minecraft:cache", cached.get("type").getAsString());
+        assertEquals(baseline.get(HydrologyCompiler.NATIVE_CAVES), cached.get("input"),
+                "Caching must retain every original noise, seed, interpolation and blend input");
+        assertEquals(baseline.get(path(P + "final_density")), candidate.get(path(P + "final_density")),
+                "The native structure and blend graph must remain unchanged");
+    }
+
+    @Test
+    void surfaceCacheRetainsTheEntireReviewedExcavationCap() {
+        var cached = candidate.get(HydrologyCompiler.SURFACE).getAsJsonObject();
+        assertEquals(Set.of("type", "input"), cached.keySet());
+        assertEquals("minecraft:cache", cached.get("type").getAsString());
+        var cap = cached.getAsJsonObject("input");
+        assertEquals("minecraft:range_choice", cap.get("type").getAsString());
+        assertEquals(HYDROLOGY + "cut", cap.get("input").getAsString());
+        assertEquals(0.25, cap.get("min_inclusive").getAsDouble());
+        assertEquals(19, cap.get("max_exclusive").getAsInt());
+        assertEquals(baseline.get(HydrologyCompiler.SURFACE), cap.get("when_out_of_range"));
+        var minimum = cap.getAsJsonObject("when_in_range");
+        assertEquals("minecraft:min", minimum.get("type").getAsString());
+        assertEquals(baseline.get(HydrologyCompiler.SURFACE), minimum.get("left"));
+        assertEquals(P + "coherent/detail/original_surface_density", minimum.get("right").getAsString());
     }
 
     @Test
@@ -146,6 +174,43 @@ class HydrologyCompilerTest {
         assertEquals(expected, input);
     }
 
+    @Test
+    void positiveAlpineReliefCannotRefillAnExcavatedLake() {
+        // Native seed -20261111, (-1000,168,434): planned lake stage 168,
+        // bed 167, base exterior -0.008, but positive relief returned +0.0456.
+        for (double cut : new double[]{0.25, 0.44328308, 3, 18}) {
+            for (double base : new double[]{-0.008, -0.04, -0.16}) {
+                var values = surfaceInputs(cut, base, 0.12);
+                assertEquals(base, evaluate(candidate.get(path(P + "coherent/surface_density")), values), 1e-6,
+                        "Positive alpine relief refilled the modeled water column");
+            }
+        }
+    }
+
+    @Test
+    void excavationCapKeepsUnmodifiedRockAndNegativeRelief() {
+        for (double cut : new double[]{-2.25, -0.25, 0, 0.1, 0.249}) {
+            var values = surfaceInputs(cut, -0.008, 0.12);
+            assertEquals(0.112, evaluate(candidate.get(path(P + "coherent/surface_density")), values), 1e-6);
+        }
+        for (double cut : new double[]{0.25, 4, 18}) {
+            assertEquals(-0.128, evaluate(candidate.get(path(P + "coherent/surface_density")),
+                    surfaceInputs(cut, -0.008, -0.12)), 1e-6);
+            // Detail has already faded to zero deep below and high above terrain.
+            for (double base : new double[]{-0.45, 0.45})
+                assertEquals(base, evaluate(candidate.get(path(P + "coherent/surface_density")),
+                        surfaceInputs(cut, base, 0)), 0);
+        }
+        assertEquals(baseline.get(path(P + "final_density")), candidate.get(path(P + "final_density")),
+                "Native blending and structure beardifier must stay outside the surface cap");
+    }
+
+    private static HashMap<String, Double> surfaceInputs(double cut, double base, double relief) {
+        return new HashMap<>(Map.of(HYDROLOGY + "cut", cut, P + "coherent/height", 167.8,
+                P + "coherent/detail/original_surface_density", base,
+                P + "coherent/detail/rock_relief", relief));
+    }
+
     private static String path(String id) {
         return VanillaAssets.path("density_function", id);
     }
@@ -169,6 +234,12 @@ class HydrologyCompilerTest {
         var object = node.getAsJsonObject();
         String type = object.get("type").getAsString();
         if (type.equals("minecraft:cache")) return evaluate(object.get("input"), values);
+        if (type.equals("minecraft:range_choice")) {
+            double selector = evaluate(object.get("input"), values);
+            return evaluate(object.get(selector >= object.get("min_inclusive").getAsDouble()
+                    && selector < object.get("max_exclusive").getAsDouble()
+                    ? "when_in_range" : "when_out_of_range"), values);
+        }
         double left = evaluate(object.get("left"), values);
         double right = evaluate(object.get("right"), values);
         return switch (type) {

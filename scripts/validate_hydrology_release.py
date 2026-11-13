@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import hydrology_checks
+import hydrology_settling_checks
 from technical_update_checks import compare_folder
 from validate_hydrology_patch import JAR, REFERENCE, VERSION, check
 from validate_mountain_release import METRICS, checksum, read, save
@@ -104,6 +105,11 @@ def publish():
             expected = ('' if mode in hydrology_checks.VANILLA_MODES else
                         build_data['reference_sha256'] if mode == 'baseline' else build_data['jar_sha256'])
             require(read(folder / f'{mode}.json')['jar_sha256'] == expected, 'Server used a different packaged JAR')
+        # Re-read native tick evidence, not just a previously emitted PASS flag.
+        settling = hydrology_settling_checks.main(folder)
+        require(settling['jar_sha256'] == build_data['jar_sha256'], 'Fluid test used another JAR')
+        result['settling'] = settling
+        result['actual_server_runs'] += 1
         hydrology[str(seed)] = result
     require(any(r['normal_world_control']['vanilla_feature_order_variable_blocks'] > 0 for r in hydrology.values()),
             'Vanilla feature-order control did not reproduce any FULL block variability')

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'scripts/fixtures/hydrology-core-14254df.json'
 PROBE = ROOT / 'scripts/java/DrainageCoreProbe.java'
 CORE = ROOT / 'src/core/java/dev/freshgenerator/core'
+BASELINE = ROOT / 'dist/FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar'
 
 
 def java_tool(name):
@@ -37,10 +38,21 @@ class HydrologyCoreRegression(unittest.TestCase):
         java, javac = java_tool('java'), java_tool('javac')
         version = subprocess.run([java, '-version'], text=True, capture_output=True, check=True, timeout=15)
         cls.results = {}
+        cls.baseline = []
         with tempfile.TemporaryDirectory(prefix='fresh-hydrology-core-') as folder:
             command = [javac, '-encoding', 'UTF-8', '-d', folder,
                        str(CORE / 'DrainageModel.java'), str(CORE / 'DrainageBasin.java'), str(PROBE)]
             subprocess.run(command, text=True, capture_output=True, check=True, timeout=45)
+            baseline_folder = Path(folder) / 'baseline'
+            baseline_folder.mkdir()
+            subprocess.run([javac, '-encoding', 'UTF-8', '-cp', str(BASELINE),
+                            '-d', str(baseline_folder), str(PROBE)],
+                           text=True, capture_output=True, check=True, timeout=45)
+            baseline = subprocess.run([java, '-Xmx768m', '-cp',
+                                       os.pathsep.join((str(baseline_folder), str(BASELINE))),
+                                       'DrainageCoreProbe', 'forward'],
+                                      text=True, capture_output=True, check=True, timeout=90)
+            cls.baseline = [json.loads(line) for line in baseline.stdout.splitlines() if line.strip()]
             for mode in ('forward', 'reverse', 'parallel'):
                 result = subprocess.run([java, '-Xmx768m', '-cp', folder, 'DrainageCoreProbe', mode],
                                         text=True, capture_output=True, check=True, timeout=90)
@@ -51,26 +63,44 @@ class HydrologyCoreRegression(unittest.TestCase):
                 cls.results[mode] = rows
         report = {'scope': 'Java core on synthetic terrain; no Minecraft/Fabric runtime',
                   'reference_commit': cls.fixture['reference_commit'],
+                  'baseline_jar': BASELINE.name,
+                  'geometry_change': 'Intentional morphology rework, not a lossless optimization',
+                  'baseline_observations': cls.baseline,
                   'java': (version.stderr or version.stdout).strip(), 'observations': cls.results}
         destination = ROOT / 'build/reports/village-release/hydrology-core-observations.json'
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
     def compare_mode(self, mode):
+        forward = {(r['seed'], r['shape']): r for r in self.results['forward']}
         for actual in self.results[mode]:
             with self.subTest(mode=mode, seed=actual['seed'], terrain=actual['shape']):
-                expected = self.expected[actual['seed'], actual['shape']]
+                expected = forward[actual['seed'], actual['shape']]
                 self.assertEqual(actual['order'], mode)
                 for field in ('tiles', 'columns', 'sha256'):
                     self.assertEqual(actual[field], expected[field], field)
 
-    def test_forward_matches_pre_optimization_geometry(self):
-        self.compare_mode('forward')
+    def test_published_baseline_still_matches_the_unmodified_historical_fixture(self):
+        self.assertEqual(len(self.baseline), len(self.expected))
+        for actual in self.baseline:
+            expected = self.expected[actual['seed'], actual['shape']]
+            for field in ('tiles', 'columns', 'sha256'):
+                self.assertEqual(actual[field], expected[field], field)
 
-    def test_reverse_matches_pre_optimization_geometry(self):
+    def test_flat_ground_remains_unmodified_and_morphology_change_is_explicit(self):
+        changed = set()
+        for actual in self.results['forward']:
+            expected = self.expected[actual['seed'], actual['shape']]
+            if actual['shape'] == 'flat':
+                self.assertEqual(actual['sha256'], expected['sha256'])
+            elif actual['sha256'] != expected['sha256']:
+                changed.add(actual['shape'])
+        self.assertEqual(changed, {'valley', 'bowl', 'spill', 'rugged'})
+
+    def test_reverse_matches_forward_geometry(self):
         self.compare_mode('reverse')
 
-    def test_parallel_matches_pre_optimization_geometry(self):
+    def test_parallel_matches_forward_geometry(self):
         self.compare_mode('parallel')
 
     def test_collision_heavy_terrain_does_not_repeat_the_old_sampler_work(self):

@@ -97,8 +97,11 @@ def spillway_metrics(columns, matched):
     lake = {i for i in matched if columns[i][5] & 3 == 3}
     stream = {i for i in matched if not columns[i][5] & 1}
     stage = max((columns[i][2] for i in lake), default=None)
+    # An outlet may descend immediately from the lake. Require actual shared
+    # wet voxels and a non-increasing stage, not an artificial same-level apron.
+    # A dry/solid lip, diagonal-only water or uphill contact still fails.
     contacts = {j for i in lake for j in neighbours(i)
-                if j in stream and columns[j][2] == stage and shares_water(columns[i], columns[j])}
+                if j in stream and columns[j][2] <= columns[i][2] and shares_water(columns[i], columns[j])}
     downstream = set(contacts)
     queue = deque(contacts)
     while queue:

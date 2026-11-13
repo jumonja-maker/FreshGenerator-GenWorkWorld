@@ -1,6 +1,7 @@
 package dev.freshgenerator.core;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.PriorityQueue;
@@ -12,7 +13,14 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
     static final int SEARCH = 7;
     private static final int RADIUS = 96;
     private static final int DIAMETER = 2 * RADIUS + 1;
-    private static final int MIN_AREA = 48;
+    private static final int MIN_AREA = 128;
+    // A non-ocean sink has floor(height)+1 as its minimum stage. This shared
+    // limit also bounds how far its backwater can affect upstream elevations.
+    static final int MAX_RISE_ABOVE_MINIMUM = 10;
+
+    static float maximumStage(float sinkHeight, int sea) {
+        return Math.max(sea - 1, (float) Math.floor(sinkHeight) + 1 + MAX_RISE_ABOVE_MINIMUM);
+    }
     private static final int MAX_AREA = 4800;
     private static final int[] CARDINAL = {-DIAMETER, -1, 1, DIAMETER};
 
@@ -32,13 +40,21 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
 
     static DrainageBasin find(DrainageModel model, Cell center, int flow, Field terrain) {
         Spill spill = spill(model, center);
-        if (spill.level < center.height() + 2.0f) return null;
+        if (spill.level < center.height() + 2.0f) {
+            // A shallow minimum on the sampled 16-block mesh is not necessarily
+            // a real lake. Preserve its certified downhill connection WITHOUT
+            // painting a lake; otherwise narrow rivers become disconnected canals.
+            if (spill.path.length == 0) return null;
+            return new DrainageBasin(center, (int) Math.floor(model.riverLevel(center)),
+                    new BitSet(), spill.path, spill.saddleIndex);
+        }
+        if (flow < MIN_FLOW) return null;
         int sill = (int) Math.floor(spill.level - 0.6f);
         int minimum = Math.max(model.sea() - 1, (int) Math.floor(center.height()) + 1);
         // Runoff constrains the surface area that can balance evaporation.
         // A drier catchment has a smaller area budget for the same inflow.
         int areaBudget = Math.min(MAX_AREA, 60 + flow * (7 + 7 * center.runoff()));
-        int highest = Math.min(sill, minimum + 10);
+        int highest = Math.min(sill, minimum + MAX_RISE_ABOVE_MINIMUM);
         int[] queue = new int[areaBudget + 1];
         for (int level = highest; level >= minimum; level--) {
             BitSet flooded = flood(center, level, terrain, queue);
@@ -151,6 +167,38 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
             }
             path[index] = key;
         }
-        return new Spill(outlet.level, path, saddle);
+        return new Spill(outlet.level, downhillTail(model, path, saddle), saddle);
+    }
+
+    /** Minimax search certifies the crest but its equal-cost index tie-break can
+     * wander back uphill after it. Prefer the already defined natural receiver
+     * chain as soon as it certifies a lower outlet inside that same search window.
+     * Keep the certified path when natural drainage leads back into the basin.
+     * This changes no saddle level, adds no outlet and performs no unbounded walk.
+     */
+    private static long[] downhillTail(DrainageModel model, long[] path, int saddle) {
+        Cell center = model.cell(path[0]);
+        int gx = x(center.key()), gz = z(center.key());
+        for (int start = saddle; start < path.length - 1; start++) {
+            var tail = new ArrayList<Long>();
+            Cell current = model.cell(path[start]);
+            while (true) {
+                // Search boundaries cannot certify an exit: use the original path.
+                if (Math.abs(x(current.key()) - gx) >= SEARCH || Math.abs(z(current.key()) - gz) >= SEARCH)
+                    break;
+                tail.add(current.key());
+                if (current.height() < center.height() - 0.55f) {
+                    long[] result = Arrays.copyOf(path, start + tail.size());
+                    for (int i = 0; i < tail.size(); i++) result[start + i] = tail.get(i);
+                    return result;
+                }
+                if (current.receiver() == NO_CELL) break;
+                Cell next = model.cell(current.receiver());
+                if (!(next.height() < current.height()))
+                    throw new IllegalStateException("Natural spill descent must lose elevation");
+                current = next;
+            }
+        }
+        return path;
     }
 }

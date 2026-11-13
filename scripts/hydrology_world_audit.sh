@@ -46,14 +46,25 @@ baseline=$root/dist/FreshGenerator-Fabric-26.3-0.3.6-alpha.1.jar
 mkdir -p "$scratch/mods"
 cp "$api" "$assets/hydrology-audit.jar" "$scratch/mods/"
 cp "$launcher" "$scratch/launcher.jar"
-read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate distant-horizons}"
+read -r -a modes <<< "${FG_HYDROLOGY_RUNS:-candidate baseline reverse parallel reload normal-baseline normal-repeat-1 normal-repeat-2 normal-candidate distant-horizons settling}"
 for mode in "${modes[@]}"; do
   preset=freshgenerator:world
   world=world-$mode
   jar=$candidate
   processors=4
+  observer_mode=$mode
+  settle=false
+  plan_file=$report/plan.json
+  fixed_sites=
   case "$mode" in
     candidate|reverse|parallel) ;;
+    settling)
+      observer_mode=candidate
+      settle=true
+      plan_file=$report/settling-plan.json
+      fixed_sites=$root/scripts/fixtures/settling-$seed.json
+      test -s "$fixed_sites"
+      ;;
     reload) world=world-candidate ;;
     baseline) jar=$baseline ;;
     patch-baseline) jar=${FG_HYDROLOGY_PATCH_BASELINE_JAR:?initial patch JAR required} ;;
@@ -90,16 +101,26 @@ max-tick-time=600000
 spawn-protection=0
 PROPS
   cp "$scratch/server.properties" "$report/$mode.properties"
-  rm -f "$scratch/hydrology-observation.json"
+  rm -f "$scratch/hydrology-observation.json" "$scratch"/settling-*.json
   if ! (
     cd "$scratch"
-    FG_HYDROLOGY_MODE="$mode" FG_HYDROLOGY_PLAN="$report/plan.json" FG_HYDROLOGY_JAR_SHA256="$jar_sha" \
+    FG_HYDROLOGY_MODE="$observer_mode" FG_HYDROLOGY_PLAN="$plan_file" FG_HYDROLOGY_JAR_SHA256="$jar_sha" \
+    FG_HYDROLOGY_SETTLE="$settle" FG_HYDROLOGY_SETTLE_SITES="$fixed_sites" \
       timeout --signal=QUIT --kill-after=15s "${FG_HYDROLOGY_TIMEOUT:-480s}" \
       /usr/bin/time -f '%M' -o "$report/$mode.rss-kib" "$java_cmd" -Xms512M -Xmx2G "-XX:ActiveProcessorCount=$processors" \
       "-Dmax.bg.threads=$processors" "-Dfabric.installer.server.gameJar=$game" -jar launcher.jar nogui
   ) > "$report/$mode.log" 2>&1; then
     tail -n 100 "$report/$mode.log"
     exit 1
+  fi
+  if [ "$mode" = settling ]; then
+    if ! grep "FRESHGENERATOR_SETTLING_COMPLETE $seed 1000" "$report/$mode.log"; then
+      tail -n 100 "$report/$mode.log"
+      exit 1
+    fi
+    cp "$scratch"/settling-*.json "$report/"
+    python3 scripts/hydrology_settling_checks.py "$report"
+    continue
   fi
   if ! grep 'FRESHGENERATOR_HYDROLOGY_WORLD_PASS' "$report/$mode.log"; then
     tail -n 100 "$report/$mode.log"
