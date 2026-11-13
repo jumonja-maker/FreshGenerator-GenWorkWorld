@@ -1,0 +1,83 @@
+name: Export exact checked density-cache candidate
+on:
+  push:
+    branches: [audit/hydrology-performance]
+    paths: [.github/workflows/hydrology-cache-evidence.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: db0d097dde7b8a23cdf73c970b2c3f35c07e5f1f
+          persist-credentials: false
+      - name: Restore only source-bound native evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,hashlib,json,os,re,sys,time,urllib.request,urllib.parse
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from ci_evidence import unpack
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          source='db0d097dde7b8a23cdf73c970b2c3f35c07e5f1f'
+          run=43499060511
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          root=Path('optimized-evidence');root.mkdir()
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  result=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if result and urllib.parse.urlsplit(req.full_url).netloc!=urllib.parse.urlsplit(newurl).netloc:
+                      result.remove_header('Authorization')
+                  return result
+          opener=urllib.request.build_opener(SafeRedirect())
+          def get(path,binary=False):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with opener.open(req,timeout=90) as response:data=response.read(134217729)
+              assert len(data)<=134217728,'Oversized API result'
+              return data if binary else json.loads(data)
+          for attempt in range(61):
+              state=get('/actions/runs/'+str(run));assert state['head_sha']==source
+              if state['status']=='completed':break
+              if attempt==60:raise RuntimeError('Native matrix still incomplete')
+              time.sleep(20)
+          jobs=get('/actions/runs/'+str(run)+'/jobs?per_page=100')
+          assert jobs['total_count']==len(jobs['jobs'])
+          identity={'GITHUB_SHA':source,'GITHUB_RUN_ID':str(run),'GITHUB_RUN_ATTEMPT':str(state['run_attempt']),'GITHUB_REPOSITORY':repo}
+          index=[]
+          for job in jobs['jobs']:
+              row={'id':job['id'],'name':job['name'],'status':job['status'],'conclusion':job['conclusion']}
+              if job['conclusion'] not in ('success','failure'):
+                  index.append(row);continue
+              log=get('/actions/jobs/'+str(job['id'])+'/logs',True).decode('utf-8-sig')
+              logs=root/'logs';logs.mkdir(exist_ok=True)
+              (logs/(str(job['id'])+'.log')).write_text(log)
+              found=re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)
+              if found:
+                  entry=json.loads(found[-1]);sha=entry['blob'];blob=get('/git/blobs/'+sha)
+                  raw=base64.b64decode(blob['content'])
+                  assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+                  row['evidence']=unpack(raw,entry['name'],identity,root/entry['name'])
+              index.append(row)
+          build=json.loads((root/'technical-build/reports/village-release/build.json').read_text())
+          assert build['source_commit']==source
+          jar=root/'technical-build/libs/FreshGenerator-Fabric-26.3-0.3.8-alpha.1.jar'
+          assert hashlib.sha256(jar.read_bytes()).hexdigest()==build['jar_sha256']
+          (root/jar.name).write_bytes(jar.read_bytes())
+          report={'source_commit':source,'run_id':run,'conclusion':state['conclusion'],'jobs':index,'build':build,'scope':'Candidate in PR6, not a main release; visual acceptance is separate'}
+          (root/'export.json').write_text(json.dumps(report,indent=2))
+          print('FRESHGENERATOR_OPTIMIZED_EXPORT',json.dumps(report))
+          assert state['conclusion']=='success','Native matrix failed; evidence retained for diagnosis'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FreshGenerator-038-optimized-db0d097
+          path: optimized-evidence/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
