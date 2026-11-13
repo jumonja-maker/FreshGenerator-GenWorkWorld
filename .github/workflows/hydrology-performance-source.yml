@@ -1,0 +1,27 @@
+name: Export immutable hydrology profiling source
+on:
+  push:
+    branches: [audit/hydrology-performance]
+    paths: [.github/workflows/hydrology-performance-source.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6449741860fb0e8daf87ebaad3537b6b2211b5eb
+          persist-credentials: false
+      - name: Archive exact source only
+        run: |
+          test "$(git rev-parse HEAD)" = "6449741860fb0e8daf87ebaad3537b6b2211b5eb"
+          git archive --format=tar.gz --output=hydrology-source-6449741.tar.gz HEAD
+          sha256sum hydrology-source-6449741.tar.gz > hydrology-source-6449741.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-source-6449741
+          path: hydrology-source-6449741.tar.gz*
+          retention-days: 7
+          if-no-files-found: error
