@@ -212,14 +212,16 @@ public final class HydrologyWorldAudit implements ModInitializer {
         return chunks;
     }
 
-    /** The native OCEAN_FLOOR predicate also counts bamboo and pumpkins.
+    /** The native OCEAN_FLOOR predicate also counts bamboo, pumpkins and melons.
      * Reproduced in paired FULL chunks at (3952,-658), seed 1337, and
      * (-187,-833), seed 801086821803359396. They can decorate unchanged soil
      * in a different feature order. Do not remove them from the world or skip
      * a terrain interval: inspect every lower block and retain unknown solids.
+     * A melon at (4026,90,-576), seed 1337, likewise raised the reported
+     * bank by one block in CI 43484450924 without establishing the soil below.
      * Water stages, exact beds and unsupported/lava flags are checked separately. */
     static boolean isBankPlant(BlockState state) {
-        return state.is(Blocks.BAMBOO) || state.is(Blocks.PUMPKIN);
+        return state.is(Blocks.BAMBOO) || state.is(Blocks.PUMPKIN) || state.is(Blocks.MELON);
     }
 
     static boolean isBareGround(BlockState state) {

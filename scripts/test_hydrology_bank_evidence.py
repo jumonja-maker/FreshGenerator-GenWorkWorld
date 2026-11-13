@@ -18,6 +18,23 @@ class BankEvidenceTests(unittest.TestCase):
         b['windows'][0]['bankPlantStates'] = {'1,71,0': 'Block{minecraft:pumpkin}'}
         self.assertEqual(hydrology_signature(a), hydrology_signature(b))
 
+    def test_recorded_melon_keeps_the_real_ground_and_water_signature(self):
+        a, center = self.sample(); b = copy.deepcopy(a)
+        b['windows'][0]['bankPlantStates'] = {'1,71,0': 'Block{minecraft:melon}'}
+        self.assertEqual(hydrology_signature(a), hydrology_signature(b))
+
+    def test_melon_record_cannot_waive_a_changed_bank_or_missing_source(self):
+        a, center = self.sample()
+        for kind in ('bank', 'source'):
+            with self.subTest(kind=kind):
+                b = copy.deepcopy(a)
+                b['windows'][0]['bankPlantStates'] = {'1,71,0': 'Block{minecraft:melon}'}
+                if kind == 'bank':
+                    b['windows'][0]['modelGround'][center + 1] += 1
+                else:
+                    b['windows'][0]['columns'][center][2] = -999
+                self.assertNotEqual(hydrology_signature(a), hydrology_signature(b))
+
     def test_plant_record_cannot_excuse_a_raised_or_missing_dry_bank(self):
         a, center = self.sample()
         for height in (71, 69, -999):
