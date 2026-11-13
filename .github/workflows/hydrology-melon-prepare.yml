@@ -1,0 +1,45 @@
+name: Prepare verified melon soil-observer correction
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/hydrology-melon-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Verify exact observer-only patch without moving any refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,subprocess,urllib.request
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          parent='f8d0cb90644b86c5cdfcfe29286091aa2aaf9146'
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          patch=gzip.decompress(base64.b64decode('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'))
+          assert hashlib.sha256(patch).hexdigest()=='a38123c998559a9835735ec64c2daf9e89cf9a7c0039b18a7a0ecaf23aa0be81'
+          subprocess.run(['git','checkout','--detach',parent],check=True)
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          paths=['src/audit/java/dev/freshgenerator/audit/HydrologyWorldAudit.java','src/test/java/dev/freshgenerator/audit/HydrologyBareGroundTest.java','scripts/test_hydrology_bank_evidence.py','docs/hydrology-melon-audit-0.3.8.md']
+          subprocess.run(['git','add',*paths],check=True)
+          assert set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())==set(paths)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          subprocess.run(['python3','scripts/test_hydrology_bank_evidence.py'],check=True)
+          def post(path,data):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+path,data=json.dumps(data).encode(),headers={
+                  'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
+          entries=[]
+          for path in paths:
+              blob=post('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=post('/git/trees',{'base_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'tree':entries})
+          commit=post('/git/commits',{'message':'test: measure real bank soil below observed native melons\n\nDiagnose immutable CI 43484450924: the sole hydrology signature mismatch was a melon at (4026,90,-576), seed1337, reported as raised ground. Preserve it as explicit plant evidence and inspect every lower block; retain unknown solids and exact water/bed/ground signatures. No production code or acceptance threshold changes.\n\nReplayed forward/reverse/parallel worlds using the exact CI game JAR 28061272b9bfd8915a36c1b7ab5257f3ffbcac54e5ad42db7cc615de9ccaa101: signatures match and the actual soil is at Y89. 309 Java and191 Python tests pass locally; the new classifier test fails against the prior observer. Add mutation controls that a melon cannot excuse raised ground or a missing water source. Full CI is still required; documented native benchmark shows no speedup over0.3.7.', 'tree':tree['sha'],'parents':[parent]})
+          print('FRESHGENERATOR_PREPARED_MELON_COMMIT',commit['sha'])
