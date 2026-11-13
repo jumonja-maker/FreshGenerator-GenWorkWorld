@@ -1,0 +1,92 @@
+name: Export exact confluence candidate and native tick evidence
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/hydrology-confluence-export.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Verify exact source and native reports for the complete candidate run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,re,subprocess,time,urllib.request,urllib.parse
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          source='f8d0cb90644b86c5cdfcfe29286091aa2aaf9146'
+          run=43484450924
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          root=Path('confluence-export'); root.mkdir()
+          subprocess.run(['git','archive','--format=tar.gz','--output='+str(root/'source.tar.gz'),source],check=True)
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  result=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if result and urllib.parse.urlsplit(req.full_url).netloc!=urllib.parse.urlsplit(newurl).netloc:
+                      result.remove_header('Authorization')
+                  return result
+          opener=urllib.request.build_opener(SafeRedirect())
+          def get(path,binary=False):
+              request=urllib.request.Request('https://api.github.com/repos/'+repo+path,headers={
+                  'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with opener.open(request,timeout=90) as response: data=response.read(90000001)
+              assert len(data)<=90000000,'Oversized response'
+              return data if binary else json.loads(data)
+          for attempt in range(61):
+              state=get('/actions/runs/'+str(run))
+              assert state['head_sha']==source
+              if state['status']=='completed': break
+              if attempt==60: raise RuntimeError('Native matrix exceeded export window')
+              time.sleep(20)
+          jobs=get('/actions/runs/'+str(run)+'/jobs?per_page=100')
+          assert jobs['total_count']==len(jobs['jobs'])
+          index=[]
+          for job in jobs['jobs']:
+              if job['conclusion'] not in ('success','failure'): continue
+              folder=root/'jobs'/str(job['id']);folder.mkdir(parents=True)
+              log=get('/actions/jobs/'+str(job['id'])+'/logs',True).decode('utf-8-sig')
+              (folder/'job.log').write_text(log)
+              item={'id':job['id'],'name':job['name'],'conclusion':job['conclusion']}
+              matches=re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)
+              if matches:
+                  stored=json.loads(matches[-1]);sha=stored['blob']
+                  blob=get('/git/blobs/'+sha);raw=base64.b64decode(blob['content'])
+                  assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+                  bundle=json.loads(gzip.decompress(raw));identity=bundle['identity']
+                  assert identity['GITHUB_SHA']==source and identity['GITHUB_RUN_ID']==str(run)
+                  assert identity['GITHUB_REPOSITORY']==repo
+                  (folder/'identity.json').write_text(json.dumps(identity,indent=2))
+                  for name,entry in bundle['files'].items():
+                      p=Path(name);assert not p.is_absolute() and '..' not in p.parts
+                      data=base64.b64decode(entry['content'])
+                      assert hashlib.sha256(data).hexdigest()==entry['sha256'],name
+                      dest=folder/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+                  item.update(blob=sha,file_count=len(bundle['files']))
+                  if job['name']=='Validate separate patch':
+                      build=json.loads((folder/'reports/village-release/build.json').read_text())
+                      assert build['source_commit']==source
+                      jar=folder/'libs/FreshGenerator-Fabric-26.3-0.3.8-alpha.1.jar'
+                      assert hashlib.sha256(jar.read_bytes()).hexdigest()==build['jar_sha256']
+                      (root/jar.name).write_bytes(jar.read_bytes())
+                      (root/'build.json').write_text(json.dumps(build,indent=2))
+              index.append(item)
+          report={'source_commit':source,'run_id':run,'conclusion':state['conclusion'],'jobs':index,
+              'scope':'Exact CI candidate; not merged or published to main; visual and performance limitations are separate'}
+          (root/'export.json').write_text(json.dumps(report,indent=2))
+          print('CONFLUENCE_CANDIDATE_EXPORTED',json.dumps(report))
+          assert state['conclusion']=='success','Full candidate matrix failed; evidence retained for diagnosis'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FreshGenerator-0.3.8-confluence-f8d0cb9
+          path: confluence-export/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
