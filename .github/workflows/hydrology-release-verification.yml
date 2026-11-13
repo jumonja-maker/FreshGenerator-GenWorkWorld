@@ -1,0 +1,52 @@
+name: Export exact main hydrology package for installation verification
+on:
+  push:
+    branches: [audit/hydrology-release-verification]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: contains(github.event.head_commit.message, '[verify-release-package]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Recover only the checksum-verified main build package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, urllib.request
+          from pathlib import Path
+          digest='bbc569b60d5cd19273a9349700178f7572912fba'
+          source='b075f24efe7683240bbf767334d1719c35301ba0'
+          request=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+digest,
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=60) as response: blob=json.load(response)
+          raw=base64.b64decode(blob['content'])
+          assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==digest
+          bundle=json.loads(gzip.decompress(raw))
+          assert bundle['identity']['GITHUB_SHA']==source
+          assert bundle['identity']['GITHUB_RUN_ID']=='43395981685'
+          root=Path('package');root.mkdir()
+          allowed=['libs/FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar',
+                   'libs/FreshGenerator-Fabric-26.3-0.3.7-alpha.1-sources.jar',
+                   'reports/village-release/build.json',
+                   'reports/village-release/reproducible.sha256']
+          for name in allowed:
+              entry=bundle['files'][name];data=base64.b64decode(entry['content'],validate=True)
+              assert hashlib.sha256(data).hexdigest()==entry['sha256']
+              (root/Path(name).name).write_bytes(data)
+          info=json.loads((root/'build.json').read_text())
+          assert info['source_commit']==source and info['reproducible_build'] is True
+          assert info['jar_sha256']=='5881f2c572e516bc49c3cc3362b8916d422efe73614fc0fb9864ac404c9b2b70'
+          assert hashlib.sha256((root/'FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar').read_bytes()).hexdigest()==info['jar_sha256']
+          (root/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
+          print('Verified main package', info['jar_sha256'], 'Java tests', info['java_tests'])
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreshGenerator-main-build-b075f24
+          path: package/
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
