@@ -1,0 +1,57 @@
+name: Prepare verified morphology bank and surface fix
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/natural-hydrology-bank-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Apply exact reviewed sources without moving any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,subprocess,urllib.request
+          from pathlib import Path
+          parent='306eb43e5af8b1ee2d73ffe383c3ebf448cd6cf3'
+          cap='0eb0522898fc805c96e07566a76134411334b581'
+          assert os.environ['GITHUB_REPOSITORY']=='jumonja-maker/FreshGenerator-GenWorkWorld'
+          subprocess.run(['git','checkout','--detach',parent],check=True)
+          patch=gzip.decompress(base64.b64decode('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'))
+          assert hashlib.sha256(patch).hexdigest()=='c9dd7cce31bcefb677fb57682f0fbae5cc0d504092d1eaae507a9ced4d5b7c0d'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          for path in ['src/tool/java/dev/freshgenerator/pack/HydrologyCompiler.java','src/test/java/dev/freshgenerator/HydrologyCompilerTest.java','scripts/validate_hydrology_patch.py']:
+              Path(path).write_bytes(subprocess.check_output(['git','show',cap+':'+path]))
+          p=Path('scripts/validate_hydrology_patch.py'); text=p.read_text()
+          old='"core/DrainageModel$TileFactory", "core/DrainageBasin",'
+          assert text.count(old)==1
+          p.write_text(text.replace(old,'"core/DrainageModel$TileFactory", "core/DrainageModel$Direction", "core/DrainageModel$Curve", "core/DrainageBasin",'))
+          expected={
+            'scripts/test_hydrology_bank_evidence.py':'a5125575c7e08a749ccc91962ea77be698197bf0034e9c13b59a75423524e530',
+            'scripts/validate_hydrology_patch.py':'26a404210301e337c167f73167293befb8dc69a5575cae0e1b318ca40ae4fb5e',
+            'src/audit/java/dev/freshgenerator/audit/HydrologyWorldAudit.java':'5cb26d84a3352d3ea67dff00a743bf5997d4a78e27a579f207d585c94c431aaf',
+            'src/test/java/dev/freshgenerator/HydrologyCompilerTest.java':'947128f7e0f0d93fa38b5c619b647ab5092eb5d535b431c330bfb42b1ace848d',
+            'src/test/java/dev/freshgenerator/audit/HydrologyBareGroundTest.java':'cee864e03ae7799a64e38405952c006f9b7c995d66c4d5b0f7fb708d554eed4a',
+            'src/tool/java/dev/freshgenerator/pack/HydrologyCompiler.java':'bbdd9271bbceb259c66de8bf1fe4d95882c1082d198abfe6e730f87ec06dd43c'}
+          for path,sha in expected.items(): assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==sha,path
+          subprocess.run(['git','diff','--check'],check=True)
+          subprocess.run(['python3','scripts/test_hydrology_bank_evidence.py'],check=True)
+          def post(endpoint,body):
+              request=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+endpoint,
+                  data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(request,timeout=60) as response:return json.load(response)
+          entries=[]
+          for path in expected:
+              blob=post('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=post('/git/trees',{'base_tree':'1e892d14d7a552af239bf2dec71cdeb4aa18562f','tree':entries})
+          commit=post('/git/commits',{'message':'fix: keep excavated lakes open and measure bank soil beneath native plants\n\nIntegrate the verified positive-alpine-relief excavation cap from 0eb052 into the morphology candidate, retaining Direction/Curve scope checks. Diagnose both failed reverse-order scenarios from immutable run 43421075905: bamboo at seed 1337 and pumpkins at seed 801086821803359396 were misclassified as bare terrain. Read the actual soil below, preserve plant coordinates/states in bankPlantStates, retain unknown solids and unchanged strict water/bed/bank signatures.\n\n284 local real-API Java tests pass. Six native Minecraft 26.3/Fabric runs on the two affected seeds agree in forward/reverse/parallel order: 3858/3858 modeled source-or-ice columns across 11 windows. Three mutation tests retain rejection of genuine bank/water/support changes. Local javac packaging is not a reproducible release; full CI and landscape visual acceptance remain required.', 'tree':tree['sha'],'parents':[parent]})
+          print('FRESHGENERATOR_PREPARED_MORPHOLOGY_COMMIT',commit['sha'])
+          print('VERIFIED_FILE_SHA256',json.dumps(expected,sort_keys=True))
