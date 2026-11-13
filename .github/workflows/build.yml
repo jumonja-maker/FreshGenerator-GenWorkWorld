@@ -100,7 +100,7 @@ jobs:
           'libs/*.jar' 'hydrology-audit/hydrology-audit.jar' 'reports/village-release/*'
           'test-results/test/*.xml' 'reports/*tests.json'
   worlds:
-    if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "(github.ref == 'refs/heads/main' || (github.ref == 'refs/heads/fix/lake-river-generation-v2' || github.ref == 'refs/heads/fix/natural-hydrology-0.3.8')) && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
@@ -148,7 +148,7 @@ jobs:
           if [ '${{ matrix.scope }}' = normal ]; then report='build/reports/technical-update/normal-${{ matrix.seed }}'; fi
           python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$report" '*.json' '*.log'
   structures:
-    if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "(github.ref == 'refs/heads/main' || (github.ref == 'refs/heads/fix/lake-river-generation-v2' || github.ref == 'refs/heads/fix/natural-hydrology-0.3.8')) && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -195,7 +195,7 @@ jobs:
     if: >-
       always() && !cancelled() &&
       ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
-       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
+       ((github.ref == 'refs/heads/fix/lake-river-generation-v2' || github.ref == 'refs/heads/fix/natural-hydrology-0.3.8') && needs.check_patch.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
@@ -244,7 +244,7 @@ jobs:
       always() && !cancelled() &&
       needs.worlds.result == 'success' && needs.structures.result == 'success' && needs.hydrology.result == 'success' &&
       ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
-       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
+       ((github.ref == 'refs/heads/fix/lake-river-generation-v2' || github.ref == 'refs/heads/fix/natural-hydrology-0.3.8') && needs.check_patch.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

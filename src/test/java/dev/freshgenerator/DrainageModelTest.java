@@ -66,15 +66,35 @@ class DrainageModelTest {
         assertTrue(isLake(lake) && hasSpillway(lake));
         assertTrue(waterTop(lake) > SEA);
         assertEquals(MAX_FLOW, network.discharge(8, 4), "Spill discharge must continue beyond the outlet");
-        int previous = waterTop(lake);
-        for (int x = 64; x <= 124; x++) {
-            int profile = tile.waterAt(x, 64);
-            assertNotEquals(DRY, profile, "Disconnected spill channel at x=" + x);
-            int y = waterTop(profile);
-            assertTrue(y <= previous + 1, "Uphill jump in the spill channel at x=" + x);
-            previous = y;
+        // River bends are now allowed: verify an actual connected four-neighbor
+        // outlet path rather than assuming the stream follows the exact z=64 line.
+        final int side = TILE_SIZE;
+        boolean[] seen = new boolean[side * side];
+        int[] queue = new int[side * side];
+        int read = 0, count = 1;
+        queue[0] = 64 * side + 64;
+        seen[queue[0]] = true;
+        boolean reachedLowerOutlet = false;
+        while (read < count) {
+            int cell = queue[read++], x = cell % side, z = cell / side;
+            int current = tile.waterAt(x, z);
+            if (current == DRY) continue;
+            if (x >= 120 && waterTop(current) < waterTop(lake)) {
+                reachedLowerOutlet = true;
+                break;
+            }
+            for (int[] dir : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                int nx = x + dir[0], nz = z + dir[1];
+                if (nx < 0 || nx >= side || nz < 0 || nz >= side) continue;
+                int index = nz * side + nx;
+                if (seen[index]) continue;
+                int next = tile.waterAt(nx, nz);
+                if (next == DRY || waterTop(next) > waterTop(current) + 1) continue;
+                seen[index] = true;
+                queue[count++] = index;
+            }
         }
-        assertTrue(previous < waterTop(lake));
+        assertTrue(reachedLowerOutlet, "Lake has no continuous spillway to the lower catchment");
         assertFalse(hasSpillway(model(bowl, LAND, -0.5f).tile(0, 0).waterAt(64, 64)));
     }
 

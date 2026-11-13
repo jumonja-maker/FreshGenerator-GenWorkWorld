@@ -12,7 +12,7 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
     static final int SEARCH = 7;
     private static final int RADIUS = 96;
     private static final int DIAMETER = 2 * RADIUS + 1;
-    private static final int MIN_AREA = 48;
+    private static final int MIN_AREA = 96;
     private static final int MAX_AREA = 4800;
     private static final int[] CARDINAL = {-DIAMETER, -1, 1, DIAMETER};
 

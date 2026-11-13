@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from village_checks import require
 
-VERSION = "0.3.7-alpha.1"
+VERSION = "0.3.8-alpha.1"
 PREVIOUS = "0.3.6-alpha.1"
 PREFIX = "FreshGenerator-Fabric-26.3-"
 JAR = PREFIX + VERSION + ".jar"
@@ -25,7 +25,8 @@ CLIMATE = {
     TERRAIN + "regions/biome_vegetation.json",
 }
 MANIFEST = "freshgenerator-worldgen-manifest.json"
-CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS, PRELIMINARY} | CLIMATE
+SURFACE = DENSITY + "surface_density.json"
+CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS, PRELIMINARY, SURFACE} | CLIMATE
 ADDED = {DENSITY + "hydrology/" + name + ".json"
          for name in ("base_height", "base_depth", "base_cave_weight", "cut", "model", "reference_cave_weight", "reference_roof_depth")}
 MIXINS = ["RandomStateHydrologyMixin", "ClimateSamplerHydrologyMixin", "BiomeSourceHydrologyMixin",
@@ -80,6 +81,15 @@ def check(reference, candidate):
             expected = old.read(name).replace(b"freshgenerator:highlands_v2/coherent/depth_blocks",
                                               b"freshgenerator:highlands_v2/coherent/hydrology/base_depth")
             require(new.read(name) == expected, "Changed native regional climate: " + name)
+        # Only the reviewed excavation cap may change the alpine exterior.
+        surface = json.loads(new.read(SURFACE))
+        expected_surface = {"type": "minecraft:range_choice",
+            "input": "freshgenerator:highlands_v2/coherent/hydrology/cut",
+            "min_inclusive": 0.25, "max_exclusive": 19,
+            "when_in_range": {"type": "minecraft:min", "left": json.loads(old.read(SURFACE)),
+                "right": "freshgenerator:highlands_v2/coherent/detail/original_surface_density"},
+            "when_out_of_range": json.loads(old.read(SURFACE))}
+        require(surface == expected_surface, "Unexpected excavation surface cap")
         for name in (HEIGHT, CAVE_WEIGHT):
             alias = DENSITY + "hydrology/base_" + Path(name).name
             require(new.read(alias) == old.read(name), "Original density must be retained byte-for-byte: " + name)
