@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from village_checks import require
 
-VERSION = "0.3.7-alpha.1"
+VERSION = "0.3.8-alpha.1"
 PREVIOUS = "0.3.6-alpha.1"
 PREFIX = "FreshGenerator-Fabric-26.3-"
 JAR = PREFIX + VERSION + ".jar"

@@ -15,7 +15,8 @@ public final class DrainageModel {
     public static final int DRY = 0;
     public static final int SPACING = 16;
     public static final int MAX_FLOW = 256;
-    public static final int MIN_FLOW = 16;
+    public static final int MIN_FLOW = 48;
+    private static final int MIN_LAKE_FLOW = 48;
     static final long NO_CELL = Long.MIN_VALUE;
     private static final int CELLS = TILE_SIZE / SPACING;
     // Shared edges include a one-block apron for the dry banks.
@@ -142,9 +143,9 @@ public final class DrainageModel {
         long[] pending = new long[MAX_FLOW];
         Fields samples = fields.get();
         for (Cell center : grids.get(tx, tz).cells) {
-            if (center.ocean || center.receiver != NO_CELL || center.height < sea - 6) continue;
+            if (center.ocean || center.receiver != NO_CELL || center.height < sea + 1.5f) continue;
             int raw = flow(center.key, pending, false);
-            if (raw < MIN_FLOW) continue;
+            if (raw < MIN_LAKE_FLOW) continue;
             DrainageBasin basin = DrainageBasin.find(this, center, raw, samples.terrain);
             if (basin != null) result.add(basin);
         }
@@ -216,7 +217,7 @@ public final class DrainageModel {
 
     private Tile buildTile(int tx, int tz) {
         Fields samples = fields.get();
-        Raster raster = new Raster(tx * TILE_SIZE - 1, tz * TILE_SIZE - 1, samples.terrain);
+        Raster raster = new Raster(tx * TILE_SIZE - 1, tz * TILE_SIZE - 1, samples.terrain, sea, seed);
         int gx0 = tx * CELLS, gz0 = tz * CELLS;
         long[] pending = new long[MAX_FLOW];
         for (int gz = gz0 - REACH_MARGIN; gz <= gz0 + CELLS + REACH_MARGIN; gz++) {
@@ -258,14 +259,18 @@ public final class DrainageModel {
     static final class Raster {
         private final int x0, z0;
         private final Field terrain;
+        private final int sea;
+        private final long seed;
         private final float[] height = new float[SIDE * SIDE];
         private final float[] cut = new float[height.length];
         private final int[] water = new int[height.length];
 
-        Raster(int x0, int z0, Field terrain) {
+        Raster(int x0, int z0, Field terrain, int sea, long seed) {
             this.x0 = x0;
             this.z0 = z0;
             this.terrain = terrain;
+            this.sea = sea;
+            this.seed = seed;
             Arrays.fill(height, Float.NaN);
         }
 
@@ -278,6 +283,9 @@ public final class DrainageModel {
                             Math.max(bankStage(water[i - SIDE]), bankStage(water[i + SIDE])));
                     if (top == Integer.MIN_VALUE) continue;
                     float h = original(i, x0 + x, z0 + z);
+                    // Below the ocean waterline native water already seals the shore.
+                    // Raising a dry-column apron here produced thin linear sand/grass dams.
+                    if (top <= sea && h <= sea) continue;
                     // Keep the uncut rim and seal shallow natural cave holes beside it.
                     // Low neighboring banks may rise by at most two and a quarter blocks.
                     if (h >= top + 0.55f) {
@@ -331,32 +339,41 @@ public final class DrainageModel {
             int maxZ = Math.min(z0 + SIDE - 1, Math.max(a.z, b.z) + margin);
             if (minX > maxX || minZ > maxZ) return;
 
-            // On gentle slopes a curve is allowed where the sampled valley is lower.
-            // At steeper grades the route contracts toward the original descent.
+            // Seek lower valley ground first. On nearly flat floodplains, where
+            // elevation does not prefer either bank, use low-frequency seeded
+            // curvature rather than rigid 16-block D8 line segments.
+            // Steep mountain streams remain nearly straight and much narrower.
             int mx = a.x + dx / 2, mz = a.z + dz / 2;
-            float bend = (1 - smooth(0.045f, 0.22f, grade)) * Math.min(4.5f, maxWidth * 0.7f);
-            float offX = -dz * bend / length, offZ = dx * bend / length;
+            float bend = (1 - smooth(0.025f, 0.18f, grade)) * Math.min(4.5f, 1.3f + maxWidth * 0.55f);
+            float sideX = -dz * bend / length, sideZ = dx * bend / length;
             float straight = terrain.at(mx, mz);
-            float left = terrain.at(Math.round(mx + offX), Math.round(mz + offZ));
-            float right = terrain.at(Math.round(mx - offX), Math.round(mz - offZ));
-            float turn = Math.min(left, right) < straight - 0.12f ? (left <= right ? 1 : -1) : 0;
+            float left = terrain.at(Math.round(mx + sideX), Math.round(mz + sideZ));
+            float right = terrain.at(Math.round(mx - sideX), Math.round(mz - sideZ));
+            float valleyTurn = Math.min(left, right) < straight - 0.12f ? (left <= right ? 1f : -1f) : 0f;
+            float turn = valleyTurn != 0 ? valleyTurn
+                    : 0.75f * (1 - smooth(0.025f, 0.085f, grade)) * curveDrift(mx, mz);
+            float offX = sideX * turn, offZ = sideZ * turn;
 
-            float[] vx = {0, dx / 3f + offX * turn * 0.89f, 2 * dx / 3f + offX * turn * 0.89f, dx};
-            float[] vz = {0, dz / 3f + offZ * turn * 0.89f, 2 * dz / 3f + offZ * turn * 0.89f, dz};
-            float[] invLength = new float[3];
-            for (int s = 0; s < 3; s++) invLength[s] = 1 / distance2(vx[s + 1] - vx[s], vz[s + 1] - vz[s]);
+            // Four chords trace a gentle arch with common fixed endpoints;
+            // no randomly displaced confluence or tile-edge junction.
+            float[] vx = {0, dx * 0.25f + offX * 0.72f, dx * 0.5f + offX,
+                    dx * 0.75f + offX * 0.72f, dx};
+            float[] vz = {0, dz * 0.25f + offZ * 0.72f, dz * 0.5f + offZ,
+                    dz * 0.75f + offZ * 0.72f, dz};
+            float[] invLength = new float[4];
+            for (int s = 0; s < 4; s++) invLength[s] = 1 / distance2(vx[s + 1] - vx[s], vz[s + 1] - vz[s]);
 
             for (int z = minZ; z <= maxZ; z++) {
                 for (int x = minX; x <= maxX; x++) {
                     float best = Float.POSITIVE_INFINITY, t = 0;
-                    for (int s = 0; s < 3; s++) {
+                    for (int s = 0; s < 4; s++) {
                         float sx = vx[s + 1] - vx[s], sz = vz[s + 1] - vz[s];
                         float px = x - a.x - vx[s], pz = z - a.z - vz[s];
                         float projection = Math.clamp((px * sx + pz * sz) * invLength[s], 0, 1);
                         float d2 = distance2(px - projection * sx, pz - projection * sz);
                         if (d2 < best) {
                             best = d2;
-                            t = (s + projection) / 3;
+                            t = (s + projection) / 4;
                         }
                     }
                     float flow = lerp(t, upstreamQ, downstreamQ);
@@ -380,8 +397,28 @@ public final class DrainageModel {
             }
         }
 
+        private float curveDrift(int x, int z) {
+            // Smooth world-seeded, 96-block noise: adjoining short reaches sample
+            // the same bend field, avoiding independent random zigzags.
+            int gx = Math.floorDiv(x, 96), gz = Math.floorDiv(z, 96);
+            float tx = smooth(0, 1, Math.floorMod(x, 96) / 96f);
+            float tz = smooth(0, 1, Math.floorMod(z, 96) / 96f);
+            return lerp(tz,
+                    lerp(tx, driftCorner(gx, gz), driftCorner(gx + 1, gz)),
+                    lerp(tx, driftCorner(gx, gz + 1), driftCorner(gx + 1, gz + 1)));
+        }
+
+        private float driftCorner(int gx, int gz) {
+            long hash = mix(seed ^ (gx * 0x9E3779B97F4A7C15L) ^ (gz * 0xC2B2AE3D27D4EB4FL));
+            return ((hash >>> 40) / 16777215f) * 2 - 1;
+        }
+
         private static float width(float flow, float grade) {
-            return (2.2f + 0.46f * (float) Math.sqrt(flow)) * (1 - 0.33f * smooth(0.05f, 0.35f, grade));
+            // The old minimum stream was almost eight blocks across. Reserve
+            // broad channels for established drainage, not headwater cells.
+            // Steep reaches become narrow cascades rather than water curtains.
+            return (1.2f + 0.29f * (float) Math.sqrt(flow))
+                    * (1 - 0.65f * smooth(0.055f, 0.22f, grade));
         }
     }
 
