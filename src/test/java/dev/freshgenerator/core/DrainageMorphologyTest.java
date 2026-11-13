@@ -15,6 +15,35 @@ class DrainageMorphologyTest {
     }
 
     @Test
+    void quantizedLakeLipAndLowerStreamShareAnActualWetVoxel() {
+        var raster = new DrainageModel.Raster(-1, -1, (x, z) -> 100, 63);
+        // lakeColumn is used here to exercise the same raster's stage seam.
+        raster.lakeColumn(10, 10, 101, true);
+        raster.lakeColumn(11, 10, 100, true);
+        var tile = raster.finish();
+        int a = tile.waterAt(10, 10), b = tile.waterAt(11, 10);
+        assertEquals(101, waterTop(a));
+        assertEquals(100, waterTop(b));
+        assertTrue(Math.min(waterTop(a), waterTop(b)) > Math.max(floor(a), floor(b)),
+                "Neighboring water at different integer stages must not be separated by their beds");
+        assertTrue(isLake(a) && hasSpillway(a), "Floor reconciliation must retain ownership flags");
+        assertTrue(tile.cutAt(10, 10) <= MAX_CUT);
+    }
+
+    @Test
+    void stageReconciliationDoesNotMoveAFlatLakeSurfaceOrDeepenAnIsolatedColumn() {
+        var raster = new DrainageModel.Raster(-1, -1, (x, z) -> 100, 63);
+        raster.lakeColumn(10, 10, 101, false);
+        raster.lakeColumn(11, 10, 101, false);
+        var tile = raster.finish();
+        for (int x : new int[]{10, 11}) {
+            assertEquals(101, waterTop(tile.waterAt(x, 10)));
+            assertEquals(99, floor(tile.waterAt(x, 10)));
+            assertEquals(0.25f, tile.cutAt(x, 10));
+        }
+    }
+
+    @Test
     void anUnconfinedPlanarSlopeIsNotAFieldOfParallelCanals() {
         Field plane = (x, z) -> 100 - 0.06f * z;
         for (long seed : SEEDS) {

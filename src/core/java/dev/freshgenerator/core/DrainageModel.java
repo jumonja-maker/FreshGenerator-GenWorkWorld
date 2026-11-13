@@ -386,6 +386,28 @@ public final class DrainageModel {
         }
 
         Tile finish() {
+            // Quantized stages must share at least one wet voxel across an edge.
+            // A one-block-deep lake lip otherwise becomes a solid dam when the
+            // next river column drops one block. Only floors change in this pass:
+            // all decisions read immutable stages, so traversal order cannot leak.
+            for (int z = 1; z < SIDE - 1; z++) {
+                for (int x = 1; x < SIDE - 1; x++) {
+                    int i = z * SIDE + x;
+                    if (water[i] == DRY) continue;
+                    int floor = floor(water[i]);
+                    int target = floor;
+                    for (int neighbour : new int[]{i - 1, i + 1, i - SIDE, i + SIDE}) {
+                        if (water[neighbour] != DRY)
+                            target = Math.min(target, waterTop(water[neighbour]) - 1);
+                    }
+                    if (target == floor) continue;
+                    float h = original(i, x0 + x, z0 + z);
+                    float proposed = Math.max(cut[i], h - (target + 0.5f));
+                    if (proposed > MAX_CUT) continue;
+                    cut[i] = proposed;
+                    water[i] = (water[i] & 0xffff0003) | ((target & 0x3fff) << 2);
+                }
+            }
             for (int z = 1; z < SIDE - 1; z++) {
                 for (int x = 1; x < SIDE - 1; x++) {
                     int i = z * SIDE + x;
