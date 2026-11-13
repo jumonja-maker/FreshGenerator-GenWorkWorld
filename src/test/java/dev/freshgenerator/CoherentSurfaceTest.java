@@ -36,8 +36,8 @@ class CoherentSurfaceTest {
         assertEquals("minecraft:add",finalDensity.get("type").getAsString());
         assertEquals("minecraft:beardifier",finalDensity.getAsJsonObject("right").get("type").getAsString());
     }
-    @Test void surfaceAndAquifersShareTheNewEnvelope() throws Exception {
-        var m=WorldgenCatalog.compile(new VanillaAssets());String p=CoherentSurfaceCompiler.PREFIX;
+    @Test void originalSurfaceAndAquifersShareThePreHydrologyEnvelope() throws Exception {
+        var m=WorldgenCatalog.compileBeforeHydrology(new VanillaAssets());String p=CoherentSurfaceCompiler.PREFIX;
         assertTrue(m.get(CoherentSurfaceCompiler.ROOT+"preliminary_surface_level.json").toString().contains(p+"coherent/height"));
         var settings=m.get("data/freshgenerator/worldgen/noise_settings/highlands_v2.json").getAsJsonObject();
         assertEquals(p+"preliminary_surface_level",settings.getAsJsonObject("aquifers").get("surface_level").getAsString());

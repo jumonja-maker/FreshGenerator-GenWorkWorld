@@ -1,0 +1,322 @@
+package dev.freshgenerator.audit;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.QuartPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkPyramid;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
+import java.util.concurrent.CompletableFuture;
+
+/** Read-only inspection of persisted block states in native FULL chunks. */
+public final class HydrologyWorldAudit implements ModInitializer {
+    static final int RADIUS = 16;
+    static final int SIDE = 2 * RADIUS + 1;
+    private static final int MISSING = -999;
+    private static final Gson JSON = new GsonBuilder().disableHtmlEscaping().create();
+
+    record Site(String kind, int x, int z) { }
+    record Window(Site site, int[] profiles) { }
+    record Plan(long seed, List<Window> windows) { }
+    record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
+                       Map<String, String> blocksAtMissingStages, List<String> blockPalette,
+                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround, Map<String, String> groundStates) { }
+    record TerrainFingerprint(Site site, String blocksSha256, String biomesSha256) { }
+
+    @Override
+    public void onInitialize() {
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            try {
+                var result = inspect(server);
+                Files.writeString(Path.of("hydrology-observation.json"), JSON.toJson(result) + "\n");
+                System.out.println("FRESHGENERATOR_HYDROLOGY_WORLD_PASS " + result.get("mode") + " " + result.get("seed"));
+            } catch (Exception | AssertionError error) {
+                error.printStackTrace();
+                System.out.println("FRESHGENERATOR_HYDROLOGY_WORLD_FAIL");
+            } finally {
+                server.halt(false);
+            }
+        });
+    }
+
+    private static Map<String, Object> inspect(MinecraftServer server) throws Exception {
+        ServerLevel level = server.overworld();
+        var generator = (NoiseBasedChunkGenerator) level.getChunkSource().getGenerator();
+        String mode = System.getenv().getOrDefault("FG_HYDROLOGY_MODE", "candidate");
+        String expected = mode.startsWith("normal") ? "minecraft:overworld" : "freshgenerator:highlands_v2";
+        String settings = generator.generatorSettings().unwrapKey().orElseThrow().identifier().toString();
+        if (!settings.equals(expected)) throw new AssertionError("Unexpected generator: " + settings);
+        long seed = level.getSeed();
+        Path planFile = Path.of(System.getenv("FG_HYDROLOGY_PLAN"));
+        long planStart = System.nanoTime();
+        if (mode.equals("candidate") && !Files.exists(planFile)) {
+            var plan = new Plan(seed, HydrologyAuditProfiles.select(level, generator));
+            Files.writeString(planFile, JSON.toJson(plan) + "\n");
+        }
+        Plan plan = JSON.fromJson(Files.readString(planFile), Plan.class);
+        if (seed != plan.seed || plan.windows.isEmpty()) throw new AssertionError("Invalid comparison plan");
+        long planNanos = System.nanoTime() - planStart;
+
+        var ordered = new TreeMap<Long, ChunkPos>();
+        for (Window window : plan.windows) {
+            Site site = window.site;
+            for (int z = Math.floorDiv(site.z - RADIUS, 16); z <= Math.floorDiv(site.z + RADIUS, 16); z++) {
+                for (int x = Math.floorDiv(site.x - RADIUS, 16); x <= Math.floorDiv(site.x + RADIUS, 16); x++) {
+                    var pos = new ChunkPos(x, z);
+                    ordered.put(pos.pack(), pos);
+                }
+            }
+        }
+        List<ChunkPos> order = new ArrayList<>(ordered.values());
+        boolean concurrent = mode.equals("parallel");
+        if (concurrent || mode.equals("reverse")) Collections.reverse(order);
+        long generationStart = System.nanoTime();
+        boolean normal = mode.startsWith("normal-");
+        boolean distantHorizons = mode.equals("distant-horizons");
+        boolean reverseFeatures = mode.equals("normal-repeat-2");
+        var terrain = normal ? decorateInOrder(level, plan, order, reverseFeatures) : List.of();
+        var chunks = distantHorizons ? DistantHorizonsAudit.load(server, level, plan.windows)
+                : load(server, level, order, concurrent);
+        long generationNanos = System.nanoTime() - generationStart;
+        List<Observation> observations = new ArrayList<>();
+        boolean candidateHydrology = !normal && !mode.endsWith("baseline");
+        for (Window window : plan.windows) observations.add(read(window, chunks, candidateHydrology, normal, level, generator));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("mode", mode);
+        result.put("jar_sha256", System.getenv("FG_HYDROLOGY_JAR_SHA256"));
+        result.put("seed", seed);
+        result.put("settings", settings);
+        result.put("minecraft", FabricLoader.getInstance().getModContainer("minecraft").orElseThrow()
+                .getMetadata().getVersion().getFriendlyString());
+        result.put("fabric_loader", FabricLoader.getInstance().getModContainer("fabricloader").orElseThrow()
+                .getMetadata().getVersion().getFriendlyString());
+        result.put("freshgenerator_loaded", FabricLoader.getInstance().isModLoaded("freshgenerator"));
+        result.put("full_chunks", chunks.size());
+        result.put("requested_parallel", concurrent);
+        result.put("plan_ms", planNanos / 1_000_000);
+        result.put("chunk_generation_ms", generationNanos / 1_000_000);
+        result.put("processors", Runtime.getRuntime().availableProcessors());
+        result.put("java", Runtime.version().toString());
+        result.put("distant_horizons", FabricLoader.getInstance().getModContainer("distanthorizons")
+                .map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse(""));
+        result.put("distant_horizons_full_chunks", distantHorizons ? chunks.size() : 0);
+        result.put("terrain_before_features", terrain);
+        result.put("feature_order", normal ? (reverseFeatures ? "reverse" : "forward") : "scheduler");
+        result.put("windows", observations);
+        return result;
+    }
+
+    /** Explicitly schedule every feature origin that can write into a sampled
+     * chunk. Ordinary-world comparisons vary this order in one vanilla control. */
+    private static List<TerrainFingerprint> decorateInOrder(ServerLevel level, Plan plan, List<ChunkPos> order,
+                                                             boolean reverse) throws Exception {
+        var source = level.getChunkSource();
+        var terrain = new TreeMap<Long, ChunkAccess>();
+        for (ChunkPos pos : order) {
+            ChunkAccess chunk = source.getChunk(pos.x(), pos.z(), ChunkStatus.TERRAIN, true);
+            if (chunk.getPersistedStatus() != ChunkStatus.TERRAIN) {
+                throw new AssertionError("Normal control already decorated before terrain capture: " + pos);
+            }
+            terrain.put(pos.pack(), chunk);
+        }
+        var fingerprints = new ArrayList<TerrainFingerprint>();
+        for (var window : plan.windows) fingerprints.add(terrainFingerprint(window.site, terrain));
+
+        int radius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FEATURES).blockStateWriteRadius();
+        var featureOrigins = new TreeMap<Long, ChunkPos>();
+        for (ChunkPos pos : order) {
+            for (int z = pos.z() - radius; z <= pos.z() + radius; z++) {
+                for (int x = pos.x() - radius; x <= pos.x() + radius; x++) {
+                    ChunkPos origin = new ChunkPos(x, z);
+                    featureOrigins.put(origin.pack(), origin);
+                }
+            }
+        }
+        var origins = reverse ? featureOrigins.descendingMap().values() : featureOrigins.values();
+        for (ChunkPos pos : origins) source.getChunk(pos.x(), pos.z(), ChunkStatus.FEATURES, true);
+        return fingerprints;
+    }
+
+    private static TerrainFingerprint terrainFingerprint(Site site, Map<Long, ChunkAccess> terrain) throws Exception {
+        var blocks = MessageDigest.getInstance("SHA-256");
+        var biomes = MessageDigest.getInstance("SHA-256");
+        var blockBytes = new IdentityHashMap<BlockState, byte[]>();
+        var pos = new BlockPos.MutableBlockPos();
+        for (int dz = 0; dz < SIDE; dz++) for (int dx = 0; dx < SIDE; dx++) {
+            int x = site.x + dx - RADIUS, z = site.z + dz - RADIUS;
+            var chunk = terrain.get(new ChunkPos(Math.floorDiv(x, 16), Math.floorDiv(z, 16)).pack());
+            for (int y = -64; y < 320; y++) {
+                var block = chunk.getBlockState(pos.set(x, y, z));
+                blocks.update(blockBytes.computeIfAbsent(block, b -> (b + "\n").getBytes(StandardCharsets.UTF_8)));
+                if (dx % 4 == 0 && dz % 4 == 0 && y % 4 == 0) {
+                    var biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y), QuartPos.fromBlock(z));
+                    biomes.update((biome.unwrapKey().orElseThrow().identifier() + "\n").getBytes(StandardCharsets.UTF_8));
+                }
+            }
+        }
+        return new TerrainFingerprint(site, HexFormat.of().formatHex(blocks.digest()), HexFormat.of().formatHex(biomes.digest()));
+    }
+
+    private static Map<Long, ChunkAccess> load(MinecraftServer server, ServerLevel level, List<ChunkPos> order, boolean concurrent) {
+        Map<Long, ChunkAccess> chunks = new TreeMap<>();
+        var source = level.getChunkSource();
+        if (concurrent) {
+            // Concurrent native FULL requests, resolved by the game's chunk scheduler.
+            var requests = order.stream().map(p -> source.getChunkFuture(p.x(), p.z(), ChunkStatus.FULL, true)).toList();
+            var all = CompletableFuture.allOf(requests.toArray(CompletableFuture[]::new));
+            server.managedBlock(all::isDone);
+            for (int i = 0; i < order.size(); i++) {
+                chunks.put(order.get(i).pack(), requests.get(i).join().orElseThrow(() -> new AssertionError("Missing async FULL chunk")));
+            }
+        } else {
+            for (ChunkPos p : order) chunks.put(p.pack(), source.getChunk(p.x(), p.z(), ChunkStatus.FULL, true));
+        }
+        for (var chunk : chunks.values()) {
+            if (!(chunk instanceof LevelChunk) || chunk.getPersistedStatus() != ChunkStatus.FULL) {
+                throw new AssertionError("Not a fully generated chunk: " + chunk.getPos());
+            }
+        }
+        return chunks;
+    }
+
+    private static Observation read(Window window, Map<Long, ChunkAccess> chunks, boolean candidateHydrology,
+                                    boolean normal, ServerLevel level, NoiseBasedChunkGenerator generator) throws Exception {
+        var pos = new BlockPos.MutableBlockPos();
+        int[][] columns = new int[SIDE * SIDE][];
+        Map<String, Integer> biomes = new TreeMap<>();
+        Map<String, String> missingStages = new TreeMap<>();
+        Map<String, Integer> palette = new LinkedHashMap<>();
+        int[] fullStates = normal ? new int[SIDE * SIDE * 384] : new int[0];
+        int[] modelGround = candidateHydrology ? new int[SIDE * SIDE] : new int[0];
+        Map<String, String> groundStates = new TreeMap<>();
+        MessageDigest geometry = MessageDigest.getInstance("SHA-256");
+        for (int dz = 0; dz < SIDE; dz++) {
+            for (int dx = 0; dx < SIDE; dx++) {
+                int i = dz * SIDE + dx;
+                int x = window.site.x + dx - RADIUS, z = window.site.z + dz - RADIUS;
+                int lx = Math.floorMod(x, 16), lz = Math.floorMod(z, 16);
+                ChunkAccess chunk = chunks.get(new ChunkPos(Math.floorDiv(x, 16), Math.floorDiv(z, 16)).pack());
+                int surface = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, lx, lz);
+                int ground = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
+                int water = MISSING, bed = MISSING, flags = 0;
+                int profile = window.profiles[i];
+                // A tree canopy or a giant mushroom cap can cover a stream.
+                // Inspect the actual block at the modeled stage beneath decorations.
+                if (candidateHydrology && profile != 0) {
+                    int expected = profile >> 16;
+                    var state = chunk.getBlockState(pos.set(x, expected, z));
+                    if (isWater(state)) {
+                        water = expected;
+                        while (water < surface && isWater(chunk.getBlockState(pos.set(x, water + 1, z)))) water++;
+                    } else {
+                        missingStages.put(x + "," + expected + "," + z,
+                                BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+                    }
+                }
+                if (water == MISSING) {
+                    for (int y = surface; y >= Math.max(chunk.getMinY(), surface - 36); y--) {
+                        var state = chunk.getBlockState(pos.set(x, y, z));
+                        if (isWater(state)) {
+                            water = y;
+                            break;
+                        }
+                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
+                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
+                                && !state.is(Blocks.BROWN_MUSHROOM_BLOCK) && !state.is(Blocks.RED_MUSHROOM_BLOCK)
+                                && !state.is(Blocks.MUSHROOM_STEM)) {
+                            ground = y;
+                            break;
+                        }
+                    }
+                }
+                if (water != MISSING) {
+                    var top = chunk.getBlockState(pos.set(x, water, z));
+                    flags |= top.is(Blocks.ICE) ? 2 : top.getFluidState().isSource() ? 1 : 0;
+                    for (int y = water - 1; y >= Math.max(chunk.getMinY(), water - 24); y--) {
+                        var state = chunk.getBlockState(pos.set(x, y, z));
+                        if (!state.getFluidState().is(FluidTags.WATER) && !state.is(Blocks.ICE)) {
+                            bed = y;
+                            ground = y;
+                            if (!Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)) flags |= 4;
+                            for (int d = 0; d <= 4 && y - d >= chunk.getMinY(); d++) {
+                                if (chunk.getBlockState(pos.set(x, y - d, z)).getFluidState().is(FluidTags.LAVA)) flags |= 8;
+                            }
+                            break;
+                        }
+                    }
+                }
+                int biomeY = water == MISSING ? surface : water;
+                var biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(biomeY), QuartPos.fromBlock(z));
+                if (biome.is(Biomes.RIVER) || biome.is(Biomes.FROZEN_RIVER)) flags |= 16;
+                if (water != MISSING || window.profiles[i] != 0) {
+                    biomes.merge(biome.unwrapKey().orElseThrow().identifier().toString(), 1, Integer::sum);
+                }
+                columns[i] = new int[]{surface, ground, water, bed, flags, window.profiles[i]};
+                if (candidateHydrology) {
+                    // Scan bare ground independently of the visible canopy or
+                    // waterlogged plants, including dry banks next to a profile.
+                    int from = profile == 0 ? surface : profile >> 16;
+                    modelGround[i] = MISSING;
+                    for (int y = from; y >= chunk.getMinY(); y--) {
+                        var state = chunk.getBlockState(pos.set(x, y, z));
+                        if (Heightmap.Types.OCEAN_FLOOR.isOpaque().test(state)
+                                && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)
+                                && !state.is(Blocks.ICE) && !state.is(Blocks.BROWN_MUSHROOM_BLOCK)
+                                && !state.is(Blocks.RED_MUSHROOM_BLOCK) && !state.is(Blocks.MUSHROOM_STEM)
+                                && state.getFluidState().isEmpty()) {
+                            modelGround[i] = y;
+                            groundStates.put(x + "," + y + "," + z, state.toString());
+                            break;
+                        }
+                    }
+                }
+                if (normal) {
+                    for (int y = -64; y < 320; y++) {
+                        String state = chunk.getBlockState(pos.set(x, y, z)).toString();
+                        fullStates[i * 384 + y + 64] = palette.computeIfAbsent(state, key -> palette.size());
+                    }
+                    if (dx % 4 == 0 && dz % 4 == 0) {
+                        int nativeGround = generator.getBaseHeight(x,z,Heightmap.Types.OCEAN_FLOOR_WG,level,level.getChunkSource().randomState());
+                        int nativeWater = generator.getBaseHeight(x,z,Heightmap.Types.WORLD_SURFACE_WG,level,level.getChunkSource().randomState());
+                        geometry.update((x+","+z+"="+nativeGround+","+nativeWater+"\n").getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            }
+        }
+        return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates,
+                HexFormat.of().formatHex(geometry.digest()), modelGround, groundStates);
+    }
+
+    private static boolean isWater(BlockState state) {
+        return state.getFluidState().is(FluidTags.WATER) || state.is(Blocks.ICE);
+    }
+}

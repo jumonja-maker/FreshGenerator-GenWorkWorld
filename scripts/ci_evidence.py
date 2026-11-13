@@ -23,6 +23,18 @@ BUNDLES={
  'structures_negative':'technical-structures--20261111',
 }
 
+HYDROLOGY_BUNDLES = {
+ 'world_fresh_random_1': 'technical-world-fresh-2037157180504249802',
+ 'world_fresh_random_2': 'technical-world-fresh-801086821803359396',
+ 'structures_random_1': 'technical-structures-2037157180504249802',
+ 'structures_random_2': 'technical-structures-801086821803359396',
+ 'hydrology_42': 'hydrology-42',
+ 'hydrology_1337': 'hydrology-1337',
+ 'hydrology_negative': 'hydrology--20261111',
+ 'hydrology_random_1': 'hydrology-2037157180504249802',
+ 'hydrology_random_2': 'hydrology-801086821803359396',
+}
+
 def require(ok,message):
  if not ok:raise ValueError(message)
 
@@ -124,35 +136,51 @@ def request(endpoint,payload=None):
  raise RuntimeError('Unreachable retry state')
 
 def put(key,root,patterns):
- require(key in BUNDLES,'Unknown evidence key')
- data=pack(root,patterns,BUNDLES[key],provenance())
+ bundles = BUNDLES | HYDROLOGY_BUNDLES
+ require(key in bundles,'Unknown evidence key')
+ data=pack(root,patterns,bundles[key],provenance())
  result=request('',{'content':base64.b64encode(data).decode('ascii'),'encoding':'base64'})
  require(result['sha']==blob_sha(data),'Upload object fingerprint mismatch')
  with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write(key+'='+result['sha']+'\n')
- print('CI_EVIDENCE_STORED '+json.dumps({'name':BUNDLES[key],'blob':result['sha'],'bytes':len(data)}))
+ print('CI_EVIDENCE_STORED '+json.dumps({'name':bundles[key],'blob':result['sha'],'bytes':len(data)}))
+
+def restore_blob(key, sha, destination, identity, bundles):
+ require(key in bundles,'Unknown evidence key')
+ require(re.fullmatch(r'[0-9a-f]{40}',sha),'Invalid evidence blob SHA')
+ result=request('/'+sha)
+ require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
+ data=base64.b64decode(result['content'])
+ require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
+ return unpack(data,bundles[key],identity,destination)
 
 def get_all(needs,destination):
  outputs={}
- for name in ('build','worlds','structures'):
+ jobs = ('build','worlds','structures')
+ bundles = BUNDLES
+ if 'hydrology' in needs:
+  jobs += ('hydrology',)
+  bundles = bundles | HYDROLOGY_BUNDLES
+ for name in jobs:
   job=needs[name];require(job['result']=='success','Failed upstream job: '+name)
   for key,value in job['outputs'].items():
    if not value:continue
-   require(key in BUNDLES and key not in outputs,'Unexpected/duplicate evidence output')
+   require(key in bundles and key not in outputs,'Unexpected/duplicate evidence output')
    require(re.fullmatch(r'[0-9a-f]{40}',value),'Invalid blob output');outputs[key]=value
- require(set(outputs)==set(BUNDLES),'Missing evidence outputs')
+ require(set(outputs)==set(bundles),'Missing evidence outputs')
  identity=provenance();index=[]
  with staged_directory(destination) as staged:
   for key,sha in sorted(outputs.items()):
-   result=request('/'+sha);require(result['sha']==sha and result['encoding']=='base64','Wrong blob response')
-   data=base64.b64decode(result['content']);require(len(data)==result['size'] and blob_sha(data)==sha,'Downloaded object fingerprint mismatch')
-   index.append(unpack(data,BUNDLES[key],identity,staged/BUNDLES[key]))
+   index.append(restore_blob(key,sha,staged/bundles[key],identity,bundles))
   (staged/'index.json').write_text(json.dumps({'identity':identity,'bundles':index},indent=2)+'\n')
  print('CI_EVIDENCE_RESTORED '+json.dumps(index))
 
 if __name__=='__main__':
  parser=argparse.ArgumentParser();sub=parser.add_subparsers(dest='mode',required=True)
- p=sub.add_parser('put');p.add_argument('key',choices=BUNDLES);p.add_argument('root');p.add_argument('patterns',nargs='+')
+ p=sub.add_parser('put');p.add_argument('key',choices=BUNDLES | HYDROLOGY_BUNDLES);p.add_argument('root');p.add_argument('patterns',nargs='+')
  p=sub.add_parser('get');p.add_argument('destination')
+ p=sub.add_parser('get-one');p.add_argument('key',choices=BUNDLES | HYDROLOGY_BUNDLES)
+ p.add_argument('sha');p.add_argument('destination')
  args=parser.parse_args()
  if args.mode=='put':put(args.key,args.root,args.patterns)
- else:get_all(json.loads(os.environ['EVIDENCE_JOBS']),args.destination)
+ elif args.mode=='get':get_all(json.loads(os.environ['EVIDENCE_JOBS']),args.destination)
+ else:restore_blob(args.key,args.sha,args.destination,provenance(),BUNDLES | HYDROLOGY_BUNDLES)

@@ -1,0 +1,260 @@
+{
+  "reference_commit": "14254dfab64063990e8a695c2de7e350ba1958cc",
+  "source_blobs": {
+    "DrainageModel.java": "304db183618b9374d591906fe4cd5137f3a5ab0f",
+    "DrainageBasin.java": "a7626a47799b9e2cf1da3ca8491c4c34a0d1b72a"
+  },
+  "scope": "Synthetic analytic terrain, not Minecraft FULL chunks. Source copies verified against Git blob SHA-1 before compilation. StrictMath makes test fields portable.",
+  "fixtures": [
+    {
+      "shape": "valley",
+      "seed": "42",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "af8b125695b7d59419e5ec1e4fbd06a13a1e9dee1d649fd902cb2c0a7bf70412",
+      "height_calls": 588107,
+      "moisture_calls": 250240,
+      "contexts": 9593
+    },
+    {
+      "shape": "valley",
+      "seed": "1337",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "b190bb1bf6eaa046b4656e5668d7df1d99e97f55fd39ed7da30865696c558bfb",
+      "height_calls": 602217,
+      "moisture_calls": 259520,
+      "contexts": 9941
+    },
+    {
+      "shape": "valley",
+      "seed": "-20261111",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "81dd308f80eb9aa1557f19a5cd928600037d72d8afa5e271d2b1c1987afbe779",
+      "height_calls": 601275,
+      "moisture_calls": 258624,
+      "contexts": 9730
+    },
+    {
+      "shape": "valley",
+      "seed": "2037157180504249802",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "b39164f8859078aa168db6762cdbc63392c4df873a2326d0211e449f3876da00",
+      "height_calls": 602233,
+      "moisture_calls": 259328,
+      "contexts": 9724
+    },
+    {
+      "shape": "valley",
+      "seed": "801086821803359396",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "aa3edf73c2c080f0cffe4cda268a482bc1de30e1cd934536c9dacceaf470a166",
+      "height_calls": 590177,
+      "moisture_calls": 253568,
+      "contexts": 9568
+    },
+    {
+      "shape": "bowl",
+      "seed": "42",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "eeface442d0ff66b4c86379607271e6709d0984bc48465569eeea36f6fe45773",
+      "height_calls": 1420744,
+      "moisture_calls": 765248,
+      "contexts": 26092
+    },
+    {
+      "shape": "bowl",
+      "seed": "1337",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "d6bf03d309a70637efd7f989d8fd6f721dbe06fb067c345eb6964500337c9a0a",
+      "height_calls": 1413532,
+      "moisture_calls": 758464,
+      "contexts": 24998
+    },
+    {
+      "shape": "bowl",
+      "seed": "-20261111",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "830d310fba7b64e7160329ec9e675e1935db7ffe239228b09e5571ace72b54d4",
+      "height_calls": 1386184,
+      "moisture_calls": 741696,
+      "contexts": 24192
+    },
+    {
+      "shape": "bowl",
+      "seed": "2037157180504249802",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "22bb48701c13988e08c54d35cd5a5471c846b24dcf4557e23682105d6143f40a",
+      "height_calls": 1471120,
+      "moisture_calls": 803136,
+      "contexts": 26945
+    },
+    {
+      "shape": "bowl",
+      "seed": "801086821803359396",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "5c84a58f112194d4629c1126d213360a515de3d30b85dd0d2d1c7d2e35934c41",
+      "height_calls": 1386315,
+      "moisture_calls": 747904,
+      "contexts": 24813
+    },
+    {
+      "shape": "spill",
+      "seed": "42",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "fdafe396cf0a47c3dce53f87c70b8c9ecbcc1cfca4866879aa00f31f1c48fa0e",
+      "height_calls": 813955,
+      "moisture_calls": 401600,
+      "contexts": 14578
+    },
+    {
+      "shape": "spill",
+      "seed": "1337",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "7bb2dd0d740f034fd4014944b4abade805d473a7d8cbdbe16c473650db4da27a",
+      "height_calls": 811147,
+      "moisture_calls": 402176,
+      "contexts": 15907
+    },
+    {
+      "shape": "spill",
+      "seed": "-20261111",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "d8fd93f5de717e777e2313c14c91618fcc36916aa2ef69904d503d39440752df",
+      "height_calls": 785705,
+      "moisture_calls": 385024,
+      "contexts": 13615
+    },
+    {
+      "shape": "spill",
+      "seed": "2037157180504249802",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "e6beb7a4886d43e1273b9acf749a68413d85a365a86cc4367565f2b847108e94",
+      "height_calls": 847070,
+      "moisture_calls": 424448,
+      "contexts": 15274
+    },
+    {
+      "shape": "spill",
+      "seed": "801086821803359396",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "8d0cd541ffcd8d382e957c048e62b9156ae8a9cb44e80b259c4f943586ca31fa",
+      "height_calls": 730377,
+      "moisture_calls": 350784,
+      "contexts": 12879
+    },
+    {
+      "shape": "rugged",
+      "seed": "42",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "277df576a4124b0c3d55119a7f4f137e65a0eacc8d882a07cffde143acffcba2",
+      "height_calls": 60432130,
+      "moisture_calls": 1425600,
+      "contexts": 25548
+    },
+    {
+      "shape": "rugged",
+      "seed": "1337",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "11f61ab8dc43a24cf0353339a91f764f0f786822680ec311ed01f2995f1e5609",
+      "height_calls": 136504745,
+      "moisture_calls": 2867520,
+      "contexts": 48119
+    },
+    {
+      "shape": "rugged",
+      "seed": "-20261111",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "7cbda5ffafb2940147424b5b5fa9cf9bef6c8a5fcb0326e96d45b0d45274996b",
+      "height_calls": 56053222,
+      "moisture_calls": 183232,
+      "contexts": 5701
+    },
+    {
+      "shape": "rugged",
+      "seed": "2037157180504249802",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "0a9bbd7fcbe6f736cdbb035484b5c1047af17269ef0f3c448ba65cf35502b2b3",
+      "height_calls": 66941964,
+      "moisture_calls": 230784,
+      "contexts": 7094
+    },
+    {
+      "shape": "rugged",
+      "seed": "801086821803359396",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "f7a0cc795b2982f0c8dfa394fd41b88ee606c42d5369c4e25d5a79007b8149fa",
+      "height_calls": 60045846,
+      "moisture_calls": 211328,
+      "contexts": 6513
+    },
+    {
+      "shape": "flat",
+      "seed": "42",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "95ab80fadce96bbcfd024ddb1e9470647b8dd9393c26a47aa6960b28cc0e26ab",
+      "height_calls": 35900,
+      "moisture_calls": 22976,
+      "contexts": 474
+    },
+    {
+      "shape": "flat",
+      "seed": "1337",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "95ab80fadce96bbcfd024ddb1e9470647b8dd9393c26a47aa6960b28cc0e26ab",
+      "height_calls": 35900,
+      "moisture_calls": 22976,
+      "contexts": 474
+    },
+    {
+      "shape": "flat",
+      "seed": "-20261111",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "95ab80fadce96bbcfd024ddb1e9470647b8dd9393c26a47aa6960b28cc0e26ab",
+      "height_calls": 35900,
+      "moisture_calls": 22976,
+      "contexts": 474
+    },
+    {
+      "shape": "flat",
+      "seed": "2037157180504249802",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "95ab80fadce96bbcfd024ddb1e9470647b8dd9393c26a47aa6960b28cc0e26ab",
+      "height_calls": 35900,
+      "moisture_calls": 22976,
+      "contexts": 474
+    },
+    {
+      "shape": "flat",
+      "seed": "801086821803359396",
+      "tiles": 12,
+      "columns": 199692,
+      "sha256": "95ab80fadce96bbcfd024ddb1e9470647b8dd9393c26a47aa6960b28cc0e26ab",
+      "height_calls": 35900,
+      "moisture_calls": 22976,
+      "contexts": 474
+    }
+  ]
+}

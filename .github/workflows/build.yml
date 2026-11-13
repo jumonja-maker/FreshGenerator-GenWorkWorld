@@ -12,9 +12,11 @@ jobs:
     name: Validate separate patch
     if: "github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     permissions:
-      contents: read
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      build_blob: ${{ steps.evidence.outputs.build_blob }}
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -28,7 +30,7 @@ jobs:
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Compile and run regression tests
         run: |
-          gradle --no-daemon --console=plain clean build
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar
           python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
@@ -37,15 +39,21 @@ jobs:
           python3 scripts/test_ci_evidence.py
           python3 scripts/test_technical_reference_envelope.py
           python3 scripts/test_village_checks.py
-          sha256sum build/libs/*.jar
+          python3 scripts/test_technical_structure_audit.py
+      - name: Verify reproducibility and packaged scope
+        run: |
           mkdir -p build/reports/village-release
           sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
-          python3 scripts/validate_mountain_release.py build
-      - name: Sample structures in two fresh worlds
-        if: contains(github.event.head_commit.message, '[audit-structures]')
-        run: |
-          bash scripts/technical_structure_audit.sh 42
-          grep -h 'FRESHGENERATOR_ALPINE_DETAIL_PASS' build/reports/technical/structures-42.*/*fg-42.log
+          gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
+          sha256sum --check build/reports/village-release/reproducible.sha256
+          python3 scripts/validate_hydrology_release.py build
+      - name: Preserve the verified candidate package
+        id: evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci_evidence.py put build_blob build
+          'libs/*.jar' 'hydrology-audit/hydrology-audit.jar' 'reports/village-release/*' 'test-results/test/*.xml'
   build:
     if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
@@ -65,7 +73,8 @@ jobs:
           cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
       - name: Compile actual APIs and run contract tests
         run: |
-          gradle --no-daemon --console=plain clean build
+          gradle --no-daemon --console=plain clean build hydrologyAuditJar
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/test_biome_region_metrics.py
           python3 scripts/test_cave_audit_metrics.py
           python3 scripts/test_cave_full_stage_checks.py
@@ -80,7 +89,7 @@ jobs:
           sha256sum build/libs/*.jar > build/reports/village-release/reproducible.sha256
           gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
           sha256sum --check build/reports/village-release/reproducible.sha256
-          python3 scripts/validate_mountain_release.py build
+          python3 scripts/validate_hydrology_release.py build
       - name: Keep exact package and test evidence
         id: evidence
         if: always()
@@ -88,16 +97,18 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/ci_evidence.py put build_blob build
-          'libs/*.jar' 'reports/village-release/*'
+          'libs/*.jar' 'hydrology-audit/hydrology-audit.jar' 'reports/village-release/*'
           'test-results/test/*.xml' 'reports/*tests.json'
   worlds:
-    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
       world_fresh_42: ${{ steps.evidence.outputs.world_fresh_42 }}
       world_fresh_1337: ${{ steps.evidence.outputs.world_fresh_1337 }}
       world_fresh_negative: ${{ steps.evidence.outputs.world_fresh_negative }}
+      world_fresh_random_1: ${{ steps.evidence.outputs.world_fresh_random_1 }}
+      world_fresh_random_2: ${{ steps.evidence.outputs.world_fresh_random_2 }}
       world_normal_42: ${{ steps.evidence.outputs.world_normal_42 }}
     strategy:
       fail-fast: false
@@ -106,6 +117,8 @@ jobs:
           - {seed: '42', scope: fresh, evidence_key: world_fresh_42}
           - {seed: '1337', scope: fresh, evidence_key: world_fresh_1337}
           - {seed: '-20261111', scope: fresh, evidence_key: world_fresh_negative}
+          - {seed: '2037157180504249802', scope: fresh, evidence_key: world_fresh_random_1}
+          - {seed: '801086821803359396', scope: fresh, evidence_key: world_fresh_random_2}
           - {seed: '42', scope: normal, evidence_key: world_normal_42}
     steps:
       - uses: actions/checkout@v4
@@ -135,13 +148,15 @@ jobs:
           if [ '${{ matrix.scope }}' = normal ]; then report='build/reports/technical-update/normal-${{ matrix.seed }}'; fi
           python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$report" '*.json' '*.log'
   structures:
-    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
+    if: "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/lake-river-generation-v2') && !contains(github.event.head_commit.message, '[inspect-worldgen]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       structures_42: ${{ steps.evidence.outputs.structures_42 }}
       structures_1337: ${{ steps.evidence.outputs.structures_1337 }}
       structures_negative: ${{ steps.evidence.outputs.structures_negative }}
+      structures_random_1: ${{ steps.evidence.outputs.structures_random_1 }}
+      structures_random_2: ${{ steps.evidence.outputs.structures_random_2 }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,6 +164,8 @@ jobs:
           - {seed: '42', evidence_key: structures_42}
           - {seed: '1337', evidence_key: structures_1337}
           - {seed: '-20261111', evidence_key: structures_negative}
+          - {seed: '2037157180504249802', evidence_key: structures_random_1}
+          - {seed: '801086821803359396', evidence_key: structures_random_2}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -172,9 +189,62 @@ jobs:
         run: |
           test -n "$STRUCTURE_REPORT_DIR"
           python3 scripts/ci_evidence.py put '${{ matrix.evidence_key }}' "$STRUCTURE_REPORT_DIR" '*.json' '*.log' '*.properties'
+  hydrology:
+    name: Native hydrology (${{ matrix.seed }})
+    needs: [build, check_patch]
+    if: >-
+      always() && !cancelled() &&
+      ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
+       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      hydrology_42: ${{ steps.evidence.outputs.hydrology_42 }}
+      hydrology_1337: ${{ steps.evidence.outputs.hydrology_1337 }}
+      hydrology_negative: ${{ steps.evidence.outputs.hydrology_negative }}
+      hydrology_random_1: ${{ steps.evidence.outputs.hydrology_random_1 }}
+      hydrology_random_2: ${{ steps.evidence.outputs.hydrology_random_2 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {seed: '42', evidence_key: hydrology_42}
+          - {seed: '1337', evidence_key: hydrology_1337}
+          - {seed: '-20261111', evidence_key: hydrology_negative}
+          - {seed: '2037157180504249802', evidence_key: hydrology_random_1}
+          - {seed: '801086821803359396', evidence_key: hydrology_random_2}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - name: Restore the tested package and observer for this run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BUILD_BLOB: ${{ needs.build.outputs.build_blob || needs.check_patch.outputs.build_blob }}
+        run: python3 scripts/ci_evidence.py get-one build_blob "$BUILD_BLOB" build
+      - name: Generate real worlds and measure water blocks
+        id: native
+        env:
+          SEED: ${{ matrix.seed }}
+          FG_HYDROLOGY_SKIP_BUILD: 'true'
+        run: bash scripts/hydrology_world_audit.sh "$SEED"
+      - name: Preserve run-bound native observations
+        id: evidence
+        if: always() && steps.native.outputs.report_dir != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.native.outputs.report_dir }}
+          EVIDENCE_KEY: ${{ matrix.evidence_key }}
+        run: python3 scripts/ci_evidence.py put "$EVIDENCE_KEY" "$REPORT" '*.json' '*.log' '*.properties' '*.rss-kib'
   publish:
-    needs: [build, worlds, structures]
-    if: github.ref == 'refs/heads/main'
+    name: Verify release evidence and package
+    needs: [build, check_patch, worlds, structures, hydrology]
+    if: >-
+      always() && !cancelled() &&
+      needs.worlds.result == 'success' && needs.structures.result == 'success' && needs.hydrology.result == 'success' &&
+      ((github.ref == 'refs/heads/main' && needs.build.result == 'success') ||
+       (github.ref == 'refs/heads/fix/lake-river-generation-v2' && needs.check_patch.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -184,10 +254,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EVIDENCE_JOBS: ${{ toJSON(needs) }}
-        run: python3 scripts/ci_evidence.py get ci-evidence
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            EVIDENCE_JOBS=$(python3 -c 'import json, os; d=json.loads(os.environ["EVIDENCE_JOBS"]); d["build"]=d["check_patch"]; print(json.dumps(d))')
+            export EVIDENCE_JOBS
+          fi
+          python3 scripts/ci_evidence.py get ci-evidence
       - name: Independently validate raw reports and prepare release
-        run: python3 scripts/validate_mountain_release.py publish
+        run: python3 scripts/validate_hydrology_release.py publish
       - name: Publish without overwriting a newer main
+        if: github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git fetch origin main
@@ -195,5 +271,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist/
-          git commit -m 'build: publish verified bounded alpine surface detail 0.3.6 [skip ci]'
+          git commit -m 'build: publish verified FreshGenerator hydrology 0.3.7 [skip ci]'
           git push origin HEAD:main

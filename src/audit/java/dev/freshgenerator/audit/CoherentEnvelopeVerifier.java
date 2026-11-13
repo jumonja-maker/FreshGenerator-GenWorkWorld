@@ -111,7 +111,10 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
             maxNeighbourStep=Math.max(maxNeighbourStep,Math.abs(h-state.sampleBlockValueUncached(height,x+1,0,z)));
             if(h>=112)for(int d=2;d<=16;d+=2){
                 float w=state.sampleBlockValueUncached(weight,x,(int)Math.floor(h)-d,z);
-                if(Math.abs(w)>.0001f)throw new AssertionError("High surface loses support: "+w);roofs++;
+                if(Math.abs(w)>.0001f)
+                    throw new AssertionError("High surface loses support at "+x+","+z
+                            +" height="+h+" depth="+d+" weight="+w);
+                roofs++;
             }
             for(int y:List.of(-48,-24,0,24))if(h-y>=43) {
                 float w=state.sampleBlockValueUncached(weight,x,y,z);

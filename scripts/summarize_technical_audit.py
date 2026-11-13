@@ -1,8 +1,8 @@
 """Summarise actual observations. Findings are never converted into a claim of no bugs."""
-import json, os
+import json, os, sys
 from pathlib import Path
 p=Path('build/reports/technical')
-seeds=[42,1337,-20261111]
+seeds=[int(seed) for seed in sys.argv[1:]] or [42,1337,-20261111]
 reports={}
 for seed in seeds:
     for mode in ['fg','vanilla']:
@@ -26,6 +26,7 @@ for label,r in reports.items():
         'full_chunks_explicitly_requested':r['explicit_full_chunks_requested'],
         'terrain_block_positions_scanned':sum(x['scanned_block_positions'] for x in r['regions']),
         'detached_sky_terrain_components':sum(x['sky_exposed_detached_terrain_components'] for x in r['regions']),
+        'water_supported_ice_components':sum(x.get('water_supported_ice_components',0) for x in r['regions']),
         'isolated_single_blocks':sum(x['isolated_single_blocks'] for x in r['regions']),
         'boundary_unknown_components':sum(x['boundary_unknown_components'] for x in r['regions']),
         'villages_examined':len(villages),
@@ -47,7 +48,7 @@ result={
     'placement_rules_equal_to_vanilla_controls':True,
     'generation_or_block_cleanup_changes':False,
     'claims_not_made':['No floating blocks anywhere in an unlimited world','All structure interiors or villager pathfinding are correct','Vanilla and FG have equal structure frequency per area','Third-party biome/structure/DH compatibility'],
-    'method':'FULL halo, six-connected occupied components, natural-material filter, structure/cave/sea exclusions; boundary contact is unknown. Village floor/door checks are conservative geometry observations, not navigation proofs.',
+    'method':'FULL halo, six-connected occupied components, natural-material filter, structure/cave/sea exclusions; ordinary ice is separately evidenced only over uninterrupted source water ending on a sturdy dry bed. Water never supports stone in the connectivity test; boundary contact is unknown. Village floor/door checks are conservative geometry observations, not navigation proofs.',
     'summary':summary,'scenarios':reports
 }
 (p/'technical-audit.json').write_text(json.dumps(result,indent=2)+'\n')

@@ -2,7 +2,7 @@
 # Real baseline -> new village terrain -> exact saved-world reload, same coordinates.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-seed=${1:?seed};[[ "$seed" = 42 || "$seed" = 1337 || "$seed" = -20261111 ]]
+seed=${1:?seed};[[ "$seed" =~ ^-?[0-9]+$ ]]
 root=$PWD;baseline=7c661cecbc42328c4ef099b034393cc36afb8b50
 published=b70fc6c63dbd1c06952f4db00be0cc872eaf0c79
 source=${GITHUB_SHA:-$(git rev-parse HEAD)}
@@ -50,4 +50,4 @@ PROPS
  done
  git -C "$tree" diff --exit-code -- src/main src/core src/tool
 done
-python3 scripts/village_checks.py "$report" "$source" "$seed"
+python3 scripts/hydrology_village_checks.py "$report" "$source" "$seed"

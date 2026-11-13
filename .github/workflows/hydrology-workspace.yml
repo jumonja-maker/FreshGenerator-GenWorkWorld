@@ -1,0 +1,22 @@
+name: Export hydrology review workspace
+on:
+  push:
+    branches: [fix/lake-river-generation-v2]
+    paths: [.github/workflows/hydrology-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Archive exact versioned review files
+        run: git archive --format=tar.gz --output=hydrology-review-source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-review-source
+          path: hydrology-review-source.tar.gz
+          retention-days: 1
+          if-no-files-found: error

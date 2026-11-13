@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.*;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.*;
@@ -171,9 +172,12 @@ public final class TechnicalWorldAudit implements ModInitializer {
     private void full(int cx,int cz){level.getChunk(cx,cz);requestedFullChunks.add(((long)cx<<32)|(cz&0xffffffffL));}
     private static String blockId(BlockState s){return BuiltInRegistries.BLOCK.getKey(s.getBlock()).toString();}
     private byte classify(BlockState s){return classification.computeIfAbsent(s,b->{
+        if(b.is(Blocks.WATER)&&b.getFluidState().isSource())return (byte)VoxelConnectivity.SOURCE_WATER;
         if(b.isAir()||(!b.isSolid()&&!b.getFluidState().isEmpty()))return (byte)0;
         String name=blockId(b);boolean nativeBlock=name.startsWith("minecraft:");String path=nativeBlock?name.substring(10):name;
-        return (byte)(nativeBlock&&(NATURAL.contains(path)||path.endsWith("_ore")||path.endsWith("_terracotta"))?3:1);
+        int flags=nativeBlock&&(NATURAL.contains(path)||path.endsWith("_ore")||path.endsWith("_terracotta"))?3:1;
+        if(b.is(Blocks.ICE))flags|=VoxelConnectivity.ORDINARY_ICE;
+        return (byte)flags;
     });}
     private void verifySpawn(){
         BlockPos spawn=level.getRespawnData().pos();int safe=0;JsonArray examples=new JsonArray();
@@ -210,17 +214,31 @@ public final class TechnicalWorldAudit implements ModInitializer {
         for(int x=0;x<width;x++)for(int z=0;z<depth;z++) {
             int wx=minCX*16+x,wz=minCZ*16+z;var chunk=level.getChunk(Math.floorDiv(wx,16),Math.floorDiv(wz,16));
             for(int y=0;y<height;y++){
-                pos.set(wx,minY+y,wz);byte kind=classify(chunk.getBlockState(pos));
+                pos.set(wx,minY+y,wz);var block=chunk.getBlockState(pos);byte kind=classify(block);
+                if((kind&1)!=0 && block.getFluidState().isEmpty() && block.isFaceSturdy(level,pos,Direction.UP))
+                    kind|=VoxelConnectivity.STURDY_FLOOR;
                 if((kind&1)!=0){for(var box:protectedBoxes)if(box.isInside(pos)){kind|=4;break;}}
                 cells[y*width*depth+z*width+x]=kind;
             }
         }
         var components=VoxelConnectivity.scan(cells,width,height,depth);
-        JsonArray candidates=new JsonArray();int sky=0,belowSea=0,protectedCount=0,cave=0,singletons=0;long naturalBlocks=0;
+        JsonArray candidates=new JsonArray(),floatingIce=new JsonArray();
+        int sky=0,belowSea=0,protectedCount=0,cave=0,singletons=0;long naturalBlocks=0;
         for(var c:components.detached()) {
             if(c.protectedStructure()){protectedCount++;continue;}
             if(c.minY()+minY<=level.getSeaLevel()){belowSea++;continue;}
             if(!c.skyExposed()){cave++;continue;}
+            if(VoxelConnectivity.waterSupportedIce(cells,width,height,depth,c)) {
+                JsonObject ice=new JsonObject();ice.addProperty("component_blocks",c.blocks());
+                JsonArray columns=new JsonArray();
+                for(int y=c.minY();y<=c.maxY();y++)for(int z=c.minZ();z<=c.maxZ();z++)for(int x=c.minX();x<=c.maxX();x++) {
+                    int i=y*width*depth+z*width+x;
+                    if((cells[i]&1)==0)continue;
+                    int waterDepth=VoxelConnectivity.sourceWaterDepthBelow(cells,i,width*depth);
+                    columns.add(GSON.toJsonTree(List.of(minCX*16+x,minCZ*16+z,minY+y,minY+y-waterDepth-1)));
+                }
+                ice.add("source_water_columns_x_z_ice_y_bed_y",columns);floatingIce.add(ice);continue;
+            }
             sky++;naturalBlocks+=c.naturalBlocks();if(c.blocks()==1)singletons++;
             JsonObject q=new JsonObject();q.addProperty("component_blocks",c.blocks());q.addProperty("natural_blocks",c.naturalBlocks());
             q.add("min",GSON.toJsonTree(List.of(minCX*16+c.minX(),minY+c.minY(),minCZ*16+c.minZ())));
@@ -231,6 +249,8 @@ public final class TechnicalWorldAudit implements ModInitializer {
         r.addProperty("y_min",minY);r.addProperty("y_max",319);r.addProperty("occupied_blocks",components.occupiedBlocks());
         r.addProperty("grounded_components",components.groundedComponents());r.addProperty("boundary_unknown_components",components.boundaryUnknownComponents());
         r.addProperty("sky_exposed_detached_terrain_components",sky);r.addProperty("detached_natural_blocks",naturalBlocks);
+        r.addProperty("water_supported_ice_components",floatingIce.size());
+        r.add("water_supported_ice_evidence",floatingIce);
         r.addProperty("isolated_single_blocks",singletons);r.addProperty("structure_components_excluded",protectedCount);
         r.addProperty("below_sea_components_excluded",belowSea);r.addProperty("non_sky_cave_components",cave);r.add("detached_candidates",candidates);
         int min=320,max=-64;Set<Integer> heights=new HashSet<>();Set<String> biomes=new TreeSet<>();

@@ -22,7 +22,7 @@ class MountainSurfaceDetailTest {
     }
     @Test void onlyOneOldResourceChangesAndHistoricOutputIsExact()throws Exception {
         var before=WorldgenCatalog.compileBeforeMountainDetails(new VanillaAssets());
-        var after=WorldgenCatalog.compile(new VanillaAssets());
+        var after=WorldgenCatalog.compileBeforeHydrology(new VanillaAssets());
         var changed=new HashSet<String>();
         for(var entry:before.entrySet())if(!entry.getValue().equals(after.get(entry.getKey())))changed.add(entry.getKey());
         assertEquals(Set.of(MountainSurfaceDetailCompiler.SURFACE),changed);
@@ -40,7 +40,7 @@ class MountainSurfaceDetailTest {
         }
     }
     @Test void detailIsThreeDimensionalAndUsesNativeSignalNotNewCaveNoise()throws Exception {
-        var after=WorldgenCatalog.compile(new VanillaAssets());
+        var after=WorldgenCatalog.compileBeforeHydrology(new VanillaAssets());
         String r=MountainSurfaceDetailCompiler.ROOT;
         var v=after.get(r+"coherent/detail/rock_relief.json").getAsJsonObject();
         assertEquals("minecraft:range_choice",v.get("type").getAsString());
@@ -51,7 +51,7 @@ class MountainSurfaceDetailTest {
     }
     @Test void samplerHeightAndAquifersAreUnchanged()throws Exception {
         var before=WorldgenCatalog.compileBeforeMountainDetails(new VanillaAssets());
-        var after=WorldgenCatalog.compile(new VanillaAssets());
+        var after=WorldgenCatalog.compileBeforeHydrology(new VanillaAssets());
         for(String n:List.of("height","depth_blocks","cave_weight","preliminary_surface_level","native_cave_body"))
             assertEquals(before.get(MountainSurfaceDetailCompiler.ROOT+"coherent/"+n+".json"),
                 after.get(MountainSurfaceDetailCompiler.ROOT+"coherent/"+n+".json"));
