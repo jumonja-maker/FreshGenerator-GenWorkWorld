@@ -1,0 +1,55 @@
+name: Preserve reviewed natural hydrology candidate
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+permissions:
+  contents: write
+jobs:
+  preserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Verify exact patch and fast-forward only the isolated candidate branch
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, subprocess
+          from pathlib import Path
+          base = 'e729fc9114c8e2292918e0d6f6727ad128fd702b'
+          target = 'fix/natural-hydrology-morphology'
+          root = Path.cwd()
+          transport = root / '.review/natural-hydrology'
+          parts = [transport / ('payload-%02d.b64' % i) for i in range(7)]
+          encoded = ''.join(p.read_text() for p in parts)
+          assert len(encoded) == 20972
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert len(raw) == 51251
+          assert hashlib.sha256(raw).hexdigest() == '1c26b08d27e685a00e1500bf2a80c0a2395c34c6a44d3c67d2ff58e8ef2827ad'
+          manifest = json.loads((transport / 'manifest.json').read_text())
+          assert len(manifest) == 11
+          patch = Path(os.environ['RUNNER_TEMP']) / 'natural-hydrology.patch'
+          patch.write_bytes(raw)
+          work = Path(os.environ['RUNNER_TEMP']) / 'natural-hydrology-candidate'
+          subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=work, text=True).strip()
+          assert git('rev-parse', 'HEAD') == base
+          git('apply', '--check', '--whitespace=error-all', str(patch))
+          git('apply', '--whitespace=error-all', str(patch))
+          changed = set(git('diff', '--name-only').splitlines()) | set(git('ls-files', '--others', '--exclude-standard').splitlines())
+          assert changed == set(manifest), (changed, set(manifest))
+          for name, digest in manifest.items():
+              path = work / name
+              assert not path.is_symlink() and path.is_file()
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
+          git('diff', '--check')
+          git('config', 'user.name', 'github-actions[bot]')
+          git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
+          git('add', '--', *sorted(manifest))
+          git('commit', '-m', 'fix: confine and narrow natural rivers, preserve native coasts, and test morphology')
+          git('fetch', 'origin', 'refs/heads/' + target)
+          assert git('rev-parse', 'FETCH_HEAD') == base, 'Candidate advanced; do not overwrite newer work'
+          git('push', 'origin', 'HEAD:refs/heads/' + target)
+          print('PRESERVED_NATURAL_HYDROLOGY', git('rev-parse', 'HEAD'))
+          print(json.dumps(manifest, sort_keys=True))

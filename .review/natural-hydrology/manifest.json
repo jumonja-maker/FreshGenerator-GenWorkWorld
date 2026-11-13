@@ -1,0 +1,13 @@
+{
+  "src/core/java/dev/freshgenerator/core/DrainageModel.java": "b292c6517a0e91ac0d74a5963ffe0b5e87bd31a75aa7d0402f70d4ea84818f33",
+  "src/core/java/dev/freshgenerator/core/DrainageBasin.java": "53e9c6e68744c7693532b56406729cfe0a2a8ff15ca7cf2e437c57ee8f3fad7e",
+  "src/test/java/dev/freshgenerator/DrainageModelTest.java": "3359267ac71528f4a47d33645533aad27db4c3c63bb5570f283a1522e118a6cc",
+  "src/test/java/dev/freshgenerator/core/DrainageMorphologyTest.java": "1723257bd62fdaa63ce176487f7788ecc9f3a6a9be4e034375066580d425eba8",
+  "scripts/test_hydrology_core.py": "15bbc81aee0b6aebb2d8530d1fcfaf0bd6b573fead81fdc9ccdcc92969425580",
+  "scripts/test_hydrology_morphology.py": "c962d21a93a61eab7eb214a29ada90ae2edfefc06d755e34b88db2888087a4f0",
+  "scripts/java/DrainageMorphologyProbe.java": "1f9c9d5669d424f4ffcdc560e7abbb3429fa371532aa4d421f10ebf161bfe899",
+  "scripts/validate_hydrology_patch.py": "006a7214bb2301c487cfb643d3636188261045442f0dac4e14faba47256eafab",
+  "gradle.properties": "c049d8d8cda8ee54b9f0008392f36362a6f657880b63b02f4b9f2040eef45f7e",
+  ".github/workflows/build.yml": "26dd29e8b5afdb8790400004cc174526903793a762c1fa3047cad853fbf782d9",
+  "docs/hydrology-morphology-0.3.8.md": "eec282026fe1f25c2a0928ae856f759db4e94fbf4ef43acedb27c8de05ef7cc0"
+}
