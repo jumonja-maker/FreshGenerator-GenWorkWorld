@@ -1,0 +1,130 @@
+--- a/src/core/java/dev/freshgenerator/core/DrainageModel.java
++++ b/src/core/java/dev/freshgenerator/core/DrainageModel.java
+@@ -386,6 +386,28 @@
+         }
+ 
+         Tile finish() {
++            // Quantized stages must share at least one wet voxel across an edge.
++            // A one-block-deep lake lip otherwise becomes a solid dam when the
++            // next river column drops one block. Only floors change in this pass:
++            // all decisions read immutable stages, so traversal order cannot leak.
++            for (int z = 1; z < SIDE - 1; z++) {
++                for (int x = 1; x < SIDE - 1; x++) {
++                    int i = z * SIDE + x;
++                    if (water[i] == DRY) continue;
++                    int floor = floor(water[i]);
++                    int target = floor;
++                    for (int neighbour : new int[]{i - 1, i + 1, i - SIDE, i + SIDE}) {
++                        if (water[neighbour] != DRY)
++                            target = Math.min(target, waterTop(water[neighbour]) - 1);
++                    }
++                    if (target == floor) continue;
++                    float h = original(i, x0 + x, z0 + z);
++                    float proposed = Math.max(cut[i], h - (target + 0.5f));
++                    if (proposed > MAX_CUT) continue;
++                    cut[i] = proposed;
++                    water[i] = (water[i] & 0xffff0003) | ((target & 0x3fff) << 2);
++                }
++            }
+             for (int z = 1; z < SIDE - 1; z++) {
+                 for (int x = 1; x < SIDE - 1; x++) {
+                     int i = z * SIDE + x;
+--- a/src/test/java/dev/freshgenerator/core/DrainageMorphologyTest.java
++++ b/src/test/java/dev/freshgenerator/core/DrainageMorphologyTest.java
+@@ -12,6 +12,35 @@
+ 
+     private static DrainageModel model(long seed, Field height) {
+         return new DrainageModel(seed, 63, () -> new Fields(height, (x, z) -> 0.2f, (x, z) -> 0.3f));
++    }
++
++    @Test
++    void quantizedLakeLipAndLowerStreamShareAnActualWetVoxel() {
++        var raster = new DrainageModel.Raster(-1, -1, (x, z) -> 100, 63);
++        // lakeColumn is used here to exercise the same raster's stage seam.
++        raster.lakeColumn(10, 10, 101, true);
++        raster.lakeColumn(11, 10, 100, true);
++        var tile = raster.finish();
++        int a = tile.waterAt(10, 10), b = tile.waterAt(11, 10);
++        assertEquals(101, waterTop(a));
++        assertEquals(100, waterTop(b));
++        assertTrue(Math.min(waterTop(a), waterTop(b)) > Math.max(floor(a), floor(b)),
++                "Neighboring water at different integer stages must not be separated by their beds");
++        assertTrue(isLake(a) && hasSpillway(a), "Floor reconciliation must retain ownership flags");
++        assertTrue(tile.cutAt(10, 10) <= MAX_CUT);
++    }
++
++    @Test
++    void stageReconciliationDoesNotMoveAFlatLakeSurfaceOrDeepenAnIsolatedColumn() {
++        var raster = new DrainageModel.Raster(-1, -1, (x, z) -> 100, 63);
++        raster.lakeColumn(10, 10, 101, false);
++        raster.lakeColumn(11, 10, 101, false);
++        var tile = raster.finish();
++        for (int x : new int[]{10, 11}) {
++            assertEquals(101, waterTop(tile.waterAt(x, 10)));
++            assertEquals(99, floor(tile.waterAt(x, 10)));
++            assertEquals(0.25f, tile.cutAt(x, 10));
++        }
+     }
+ 
+     @Test
+--- a/scripts/hydrology_checks.py
++++ b/scripts/hydrology_checks.py
+@@ -97,8 +97,11 @@
+     lake = {i for i in matched if columns[i][5] & 3 == 3}
+     stream = {i for i in matched if not columns[i][5] & 1}
+     stage = max((columns[i][2] for i in lake), default=None)
++    # An outlet may descend immediately from the lake. Require actual shared
++    # wet voxels and a non-increasing stage, not an artificial same-level apron.
++    # A dry/solid lip, diagonal-only water or uphill contact still fails.
+     contacts = {j for i in lake for j in neighbours(i)
+-                if j in stream and columns[j][2] == stage and shares_water(columns[i], columns[j])}
++                if j in stream and columns[j][2] <= columns[i][2] and shares_water(columns[i], columns[j])}
+     downstream = set(contacts)
+     queue = deque(contacts)
+     while queue:
+--- /dev/null
++++ b/scripts/test_hydrology_stage_connectivity.py
+@@ -0,0 +1,43 @@
++"""Verify actual shared water volume, including a one-step lake outlet."""
++import unittest
++from hydrology_checks import SIDE, spillway_metrics
++
++
++class SpillwayConnectivityTest(unittest.TestCase):
++    @staticmethod
++    def column(stage, floor, lake=False):
++        flags = 3 if lake else 0
++        profile = (stage << 16) | ((floor & 0x3fff) << 2) | flags
++        return [floor, floor, stage, floor, 1, profile]
++
++    def measure(self, first, second, third=None):
++        columns = [[0, 0, -999, -999, 0, 0] for _ in range(SIDE * SIDE)]
++        i = 16 * SIDE + 16
++        columns[i], columns[i + 1] = first, second
++        selected = [i, i + 1]
++        if third is not None:
++            columns[i + 2] = third
++            selected.append(i + 2)
++        return spillway_metrics(columns, selected)
++
++    def test_equal_stage_reach_then_drop_is_still_an_outlet(self):
++        self.assertEqual(self.measure(self.column(68, 66, True),
++                                      self.column(68, 65), self.column(67, 65)), (1, 1))
++
++    def test_immediate_lower_stage_with_shared_water_is_an_outlet(self):
++        # The upper column contains water at Y67 and Y68; the next at Y66/Y67.
++        # Requiring an equal-height surface would falsely reject their shared Y67.
++        self.assertEqual(self.measure(self.column(68, 66, True),
++                                      self.column(67, 65)), (1, 1))
++
++    def test_diagonal_water_above_a_solid_lip_is_not_connected(self):
++        self.assertEqual(self.measure(self.column(68, 67, True),
++                                      self.column(67, 66)), (0, 0))
++
++    def test_uphill_contact_does_not_certify_a_downstream_outlet(self):
++        self.assertEqual(self.measure(self.column(68, 66, True),
++                                      self.column(69, 66), self.column(67, 65)), (0, 0))
++
++
++if __name__ == '__main__':
++    unittest.main(verbosity=2)

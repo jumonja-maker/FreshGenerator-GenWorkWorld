@@ -1,4 +1,4 @@
-name: Preserve reviewed natural hydrology candidate
+name: Preserve checked shared water-stage fix
 on:
   push:
     branches: [audit/natural-hydrology-transfer]
@@ -11,26 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
-      - name: Verify exact patch and fast-forward only the isolated candidate branch
+      - name: Verify the source-only patch and advance the isolated candidate
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, subprocess
+          import hashlib, json, os, subprocess
           from pathlib import Path
-          base = 'e729fc9114c8e2292918e0d6f6727ad128fd702b'
+          base = '15a13eb53107f559240dc6fc4cf1b8db406fb5d7'
           target = 'fix/natural-hydrology-morphology'
-          root = Path.cwd()
-          transport = root / '.review/natural-hydrology'
-          parts = [transport / ('payload-%02d.b64' % i) for i in range(7)]
-          encoded = ''.join(p.read_text() for p in parts)
-          assert len(encoded) == 20972
-          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
-          assert len(raw) == 51251
-          assert hashlib.sha256(raw).hexdigest() == '1c26b08d27e685a00e1500bf2a80c0a2395c34c6a44d3c67d2ff58e8ef2827ad'
-          manifest = json.loads((transport / 'manifest.json').read_text())
-          assert len(manifest) == 11
-          patch = Path(os.environ['RUNNER_TEMP']) / 'natural-hydrology.patch'
+          raw = Path('.review/natural-hydrology/stage.patch').read_bytes()
+          assert len(raw) == 6218
+          assert hashlib.sha256(raw).hexdigest() == '0d39ab6687f02ebbf5fb84158dc9cc6f61b5a039709b5dfc16640dad156e9245'
+          manifest = {
+            'src/core/java/dev/freshgenerator/core/DrainageModel.java': '9cbaa8605d8b46ef316cc7ccc983b3031cc59c9de0fbaf691c176f67133dc0d5',
+            'src/test/java/dev/freshgenerator/core/DrainageMorphologyTest.java': '9f3a43bf37906aa67cdb1d69c1df7fbfb9ed546ee4aaba53ec28923fda7fd9fd',
+            'scripts/hydrology_checks.py': '15aa8a7fac187f2a7b6c7195e0e65067480b571e661c2e5854b58fe23806b715',
+            'scripts/test_hydrology_stage_connectivity.py': 'c170dddf96f6010521b5521f52691030c743dff212799741e7545c6d238d9aaf'
+          }
+          patch = Path(os.environ['RUNNER_TEMP']) / 'water-stage-seams.patch'
           patch.write_bytes(raw)
-          work = Path(os.environ['RUNNER_TEMP']) / 'natural-hydrology-candidate'
+          work = Path(os.environ['RUNNER_TEMP']) / 'water-stage-candidate'
           subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
           def git(*args):
               return subprocess.check_output(['git', *args], cwd=work, text=True).strip()
@@ -40,22 +39,16 @@ jobs:
           changed = set(git('diff', '--name-only').splitlines()) | set(git('ls-files', '--others', '--exclude-standard').splitlines())
           assert changed == set(manifest), (changed, set(manifest))
           for name, digest in manifest.items():
-              path = work / name
-              assert not path.is_symlink() and path.is_file()
-              assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
-          # GITHUB_TOKEN has contents permission, not workflows permission.
-          # Keep the original workflow; it will be updated separately through
-          # the authorized connector, not through this restricted runner token.
-          workflow = '.github/workflows/build.yml'
-          git('restore', '--source=' + base, '--', workflow)
-          manifest.pop(workflow)
+              file = work / name
+              assert not file.is_symlink() and file.is_file()
+              assert hashlib.sha256(file.read_bytes()).hexdigest() == digest, name
           git('diff', '--check')
           git('config', 'user.name', 'github-actions[bot]')
           git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
           git('add', '--', *sorted(manifest))
-          git('commit', '-m', 'fix: confine and narrow natural rivers, preserve native coasts, and test morphology')
+          git('commit', '-m', 'fix: connect descending water stages without changing lake levels or flooding dry banks')
           git('fetch', 'origin', 'refs/heads/' + target)
-          assert git('rev-parse', 'FETCH_HEAD') == base, 'Candidate advanced; do not overwrite newer work'
+          assert git('rev-parse', 'FETCH_HEAD') == base, 'Newer candidate exists; do not overwrite'
           git('push', 'origin', 'HEAD:refs/heads/' + target)
-          print('PRESERVED_NATURAL_HYDROLOGY', git('rev-parse', 'HEAD'))
+          print('PRESERVED_WATER_STAGE_FIX', git('rev-parse', 'HEAD'))
           print(json.dumps(manifest, sort_keys=True))
