@@ -1,0 +1,44 @@
+name: Export exact parallel-generation regression
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/hydrology-parallel-evidence.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Restore only the verified failure observations and package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,urllib.request
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          root=Path('parallel-evidence');root.mkdir()
+          for label,sha in [('build','b51df12cfb12b1bf95ec06d19718d1adfde4356f'),('hydrology-1337','c9c18e8dd23fb514caadf696a503a1a0a8ec822e')]:
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=60) as response: item=json.load(response)
+              raw=base64.b64decode(item['content'])
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+              bundle=json.loads(gzip.decompress(raw));ident=bundle['identity']
+              assert ident['GITHUB_SHA']=='f8d0cb90644b86c5cdfcfe29286091aa2aaf9146'
+              assert ident['GITHUB_RUN_ID']=='43484450924' and ident['GITHUB_REPOSITORY']==repo
+              folder=root/label;folder.mkdir()
+              (folder/'identity.json').write_text(json.dumps(ident,indent=2))
+              for name,entry in bundle['files'].items():
+                  p=Path(name);assert not p.is_absolute() and '..' not in p.parts
+                  data=base64.b64decode(entry['content']);assert hashlib.sha256(data).hexdigest()==entry['sha256']
+                  dest=folder/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+              print('VERIFIED',label,sha,len(bundle['files']))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hydrology-parallel-f8d0cb9
+          path: parallel-evidence/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 5
