@@ -21,8 +21,8 @@ jobs:
           import base64,gzip,hashlib,json,os,re,subprocess,time,urllib.request,urllib.parse
           from pathlib import Path
           repo='jumonja-maker/FreshGenerator-GenWorkWorld'
-          source='f8d0cb90644b86c5cdfcfe29286091aa2aaf9146'
-          run=43484450924
+          source='6449741860fb0e8daf87ebaad3537b6b2211b5eb'
+          run=43488515767
           assert os.environ['GITHUB_REPOSITORY']==repo
           root=Path('confluence-export'); root.mkdir()
           subprocess.run(['git','archive','--format=tar.gz','--output='+str(root/'source.tar.gz'),source],check=True)
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: FreshGenerator-0.3.8-confluence-f8d0cb9
+          name: FreshGenerator-0.3.8-confluence-6449741
           path: confluence-export/
           if-no-files-found: error
           compression-level: 6
