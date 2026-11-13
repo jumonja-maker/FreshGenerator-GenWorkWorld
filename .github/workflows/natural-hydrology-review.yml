@@ -1,0 +1,41 @@
+name: Export natural hydrology review evidence
+on:
+  push:
+    branches: [audit/natural-hydrology-review]
+    paths: [.github/workflows/natural-hydrology-review.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Archive pinned source and failed native observations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          root=Path('natural-review'); root.mkdir()
+          sha='9e2c02e3ffdb5388ee0d6645474765da79e7a05c'
+          subprocess.run(['git','archive','--format=tar.gz','--output='+str(root/'source.tar.gz'),sha],check=True)
+          (root/'source-sha.txt').write_text(sha+'\n')
+          for name, blob in [('build','698f3d902b439e86a66f74f873b9bdfcb1405f87'),('negative','3ee61d8d8eaa9f1e2b455a9cad1228f4d1599c7a')]:
+              url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+blob
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=60) as r: body=json.load(r)
+              raw=base64.b64decode(body['content'])
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==blob
+              data=json.loads(gzip.decompress(raw))
+              assert data['identity']['GITHUB_SHA']==sha and data['identity']['GITHUB_RUN_ID']=='43401813810'
+              (root/(name+'-bundle.json.gz')).write_bytes(raw)
+          print('Pinned source and hash-verified observations exported')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: natural-hydrology-review-9e2c02e
+          path: natural-review/
+          retention-days: 3
+          if-no-files-found: error
