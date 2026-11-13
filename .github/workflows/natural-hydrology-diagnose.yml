@@ -33,7 +33,7 @@ jobs:
           files=bundle['files']
           print('EVIDENCE_FILES',list(files))
           def parse(name):
-              matches=[key for key in files if key.endswith(name)]
+              matches=[name] if name in files else []
               assert len(matches)==1,(name,matches)
               item=files[matches[0]]
               data=base64.b64decode(item['content'])
