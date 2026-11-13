@@ -13,60 +13,46 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Archive the exact source and verified raw observations
+        with: {persist-credentials: false, fetch-depth: 2}
+      - name: Archive exact source and checksum-verified regression observations
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, re, subprocess, urllib.request, urllib.parse
+          import base64, gzip, hashlib, json, os, subprocess, urllib.request
           from pathlib import Path
-          REPO=os.environ['REPO']; RUN=43347296228
-          SHA='b891e204b1ee705afc82535cdca82e24ad35804e'
+          SHA='d13b6db69f52aed9716683a464656eb8d6687895'
+          RUN='43390547938'
           root=Path('diagnosis'); root.mkdir()
-          subprocess.run(['git','archive','--format=tar.gz','--output=diagnosis/source.tar.gz','HEAD'],check=True)
-          (root/'source-commit.txt').write_text(os.environ['GITHUB_SHA']+'\n')
-          class SafeRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  result=super().redirect_request(req,fp,code,msg,headers,newurl)
-                  if result and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
-                      result.remove_header('Authorization')
-                  return result
-          opener=urllib.request.build_opener(SafeRedirect())
-          def get(path, binary=False):
-              request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
-                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
-              with opener.open(request,timeout=90) as response: data=response.read(80000000)
-              return data if binary else json.loads(data)
-          jobs=get('/actions/runs/'+str(RUN)+'/jobs?per_page=100')['jobs']
+          subprocess.run(['git','archive','--format=tar.gz','--output=diagnosis/source.tar.gz',SHA],check=True)
+          (root/'source-commit.txt').write_text(SHA+'\n')
+          blobs={'build':'97c1929f6160fc8456f4ccde1c2cc345801a726a',
+                 'structures-random2':'e61c15f6842cbb003a3d176cd329bee9df5c7183',
+                 'hydrology-random2':'71972ec9449e8d04f4b1b589178ffdca9b583ad0'}
           index=[]
-          for job in jobs:
-              if job['conclusion'] not in ('success','failure'): continue
-              log=get('/actions/jobs/'+str(job['id'])+'/logs',True).decode('utf-8-sig')
-              folder=root/str(job['id']); folder.mkdir()
-              (folder/'job.log').write_text(log)
-              matches=re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)
-              print(job['name'],[line for line in log.splitlines() if 'ValueError:' in line])
-              if not matches: continue
-              item=json.loads(matches[-1]); blob=get('/git/blobs/'+item['blob'])
-              raw=base64.b64decode(blob['content'])
-              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==item['blob']
+          for label,digest in blobs.items():
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+digest,
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=90) as response: blob=json.load(response)
+              raw=base64.b64decode(blob['content'],validate=False)
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==digest
               bundle=json.loads(gzip.decompress(raw))
-              assert bundle['identity']['GITHUB_SHA']==SHA and bundle['identity']['GITHUB_RUN_ID']==str(RUN)
+              assert bundle['identity']['GITHUB_SHA']==SHA and bundle['identity']['GITHUB_RUN_ID']==RUN
+              folder=root/label; folder.mkdir()
               (folder/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
               for name,entry in bundle['files'].items():
                   path=Path(name)
                   assert not path.is_absolute() and '..' not in path.parts
-                  data=base64.b64decode(entry['content'])
+                  data=base64.b64decode(entry['content'],validate=True)
                   assert hashlib.sha256(data).hexdigest()==entry['sha256']
-                  dest=folder/path; dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
-              index.append({'job':job['name'],'id':job['id'],'blob':item['blob'],'files':list(bundle['files'])})
+                  dest=folder/path;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+              index.append({'name':label,'blob':digest,'files':list(bundle['files'])})
           (root/'index.json').write_text(json.dumps(index,indent=2))
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: hydrology-final-evidence-b891e20
+          name: hydrology-resume-d13b6db
           path: diagnosis/
           retention-days: 3
           compression-level: 6
