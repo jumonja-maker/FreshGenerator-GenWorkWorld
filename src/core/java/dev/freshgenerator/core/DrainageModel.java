@@ -43,6 +43,11 @@ public final class DrainageModel {
     private final Tiles<AtomicIntegerArray> channels = new Tiles<>(4096,
             (x, z) -> new AtomicIntegerArray(CELLS * CELLS));
     private final Tiles<List<DrainageBasin>> basins = new Tiles<>(256, this::buildBasins);
+    // Invert the certified spill edges once per receiving grid. Previously each
+    // visited upstream node rescanned up to nine basin grids in both flow and
+    // channel searches. This immutable index changes neither edges nor order.
+    private final Tiles<long[][]> spillSources = new Tiles<>(512, this::buildSpillSources);
+    private static final long[] NO_SPILLS = new long[0];
     private final Tiles<Tile> rasters = new Tiles<>(128, this::buildTile);
 
     @FunctionalInterface
@@ -100,6 +105,72 @@ public final class DrainageModel {
 
     float riverLevel(Cell cell) {
         return Math.max(sea - 1, cell.height - 2.0f);
+    }
+
+    /** The water receiving a tributary is a boundary condition, not h - 2.
+     * A lake's stage can exceed the raw river estimate several blocks upstream.
+     * Follow the strictly descending receiver graph to that boundary, then carry
+     * its stage upstream until the natural profile rises above it. The terrain,
+     * lake footprint and spill saddle are not raised or enlarged by this lookup.
+     * Completed float bits only are cached; traversal never samples a neighbour
+     * raster, so tile order, concurrent requests and cache eviction are harmless.
+     */
+    float waterLevel(Cell start) {
+        Grid origin = grid(x(start.key), z(start.key));
+        int originSlot = origin.index(x(start.key), z(start.key));
+        int ready = origin.stage.get(originSlot);
+        if (ready != 0) return Float.intBitsToFloat(ready);
+        float originalStage = riverLevel(start);
+        var path = new ArrayList<Cell>();
+        Cell current = start;
+        float level;
+        while (true) {
+            // Every following receiver is strictly lower. Even a maximally
+            // filled downstream lake cannot affect this start once its upper
+            // bound falls below the natural start stage. This is an elevation
+            // proof, NOT a fixed-distance truncation. Cache ONLY the start:
+            // intermediate nodes can still have a different downstream stage.
+            if (DrainageBasin.maximumStage(current.height, sea) <= originalStage) {
+                origin.stage.compareAndSet(originSlot, 0, Float.floatToIntBits(originalStage));
+                return originalStage;
+            }
+            Grid owner = grid(x(current.key), z(current.key));
+            int known = owner.stage.get(owner.index(x(current.key), z(current.key)));
+            if (known != 0) {
+                level = Float.intBitsToFloat(known);
+                break;
+            }
+            path.add(current);
+            if (current.ocean) {
+                level = sea - 1;
+                break;
+            }
+            long receiver = current.receiver;
+            if (receiver == NO_CELL) {
+                DrainageBasin basin = null;
+                for (DrainageBasin candidate : basins.get(Math.floorDiv(x(current.key), CELLS),
+                        Math.floorDiv(z(current.key), CELLS))) {
+                    if (candidate.center().key == current.key) { basin = candidate; break; }
+                }
+                if (basin == null || !basin.footprint().isEmpty() || basin.outlet() == NO_CELL) {
+                    level = basin != null && !basin.footprint().isEmpty()
+                            ? basin.top() : riverLevel(current);
+                    break;
+                }
+                receiver = basin.outlet();
+            }
+            Cell next = cell(receiver);
+            if (!(next.height < current.height))
+                throw new IllegalStateException("Water-stage receiver must lose elevation");
+            current = next;
+        }
+        for (int i = path.size() - 1; i >= 0; i--) {
+            Cell node = path.get(i);
+            level = Math.max(level, riverLevel(node));
+            Grid owner = grid(x(node.key), z(node.key));
+            owner.stage.compareAndSet(owner.index(x(node.key), z(node.key)), 0, Float.floatToIntBits(level));
+        }
+        return level;
     }
 
     private Grid grid(int gx, int gz) {
@@ -174,6 +245,34 @@ public final class DrainageModel {
         return List.copyOf(result);
     }
 
+    private long[][] buildSpillSources(int tx, int tz) {
+        int gx0 = tx * CELLS, gz0 = tz * CELLS;
+        long[][] incoming = new long[CELLS * CELLS][];
+        int radius = DrainageBasin.SEARCH;
+        for (int bz = Math.floorDiv(gz0 - radius, CELLS); bz <= Math.floorDiv(gz0 + CELLS - 1 + radius, CELLS); bz++) {
+            for (int bx = Math.floorDiv(gx0 - radius, CELLS); bx <= Math.floorDiv(gx0 + CELLS - 1 + radius, CELLS); bx++) {
+                for (DrainageBasin basin : basins.get(bx, bz)) {
+                    long outlet = basin.outlet();
+                    if (outlet == NO_CELL) continue;
+                    int x = x(outlet) - gx0, z = z(outlet) - gz0;
+                    if (x < 0 || x >= CELLS || z < 0 || z >= CELLS) continue;
+                    int index = z * CELLS + x;
+                    long[] old = incoming[index];
+                    long[] values = old == null ? new long[1] : Arrays.copyOf(old, old.length + 1);
+                    values[values.length - 1] = basin.center().key;
+                    incoming[index] = values;
+                }
+            }
+        }
+        return incoming;
+    }
+
+    private long[] spillSources(int gx, int gz) {
+        long[] result = spillSources.get(Math.floorDiv(gx, CELLS), Math.floorDiv(gz, CELLS))
+                [Math.floorMod(gz, CELLS) * CELLS + Math.floorMod(gx, CELLS)];
+        return result == null ? NO_SPILLS : result;
+    }
+
     /**
      * Reverse traversal of a single-receiver DAG. Every visited cell contributes at
      * least one unit, so discovering MAX_FLOW distinct ancestors is sufficient even
@@ -221,13 +320,9 @@ public final class DrainageModel {
                 }
             }
             if (includeSpills && count < MAX_FLOW && total < MAX_FLOW && !cell.ocean) {
-                int radius = DrainageBasin.SEARCH;
-                for (int tz = Math.floorDiv(cz - radius, CELLS); tz <= Math.floorDiv(cz + radius, CELLS); tz++) {
-                    for (int tx = Math.floorDiv(cx - radius, CELLS); tx <= Math.floorDiv(cx + radius, CELLS); tx++) {
-                        for (DrainageBasin basin : basins.get(tx, tz)) {
-                            if (basin.outlet() == current && count < MAX_FLOW) pending[count++] = basin.center().key;
-                        }
-                    }
+                for (long source : spillSources(cx, cz)) {
+                    if (count == MAX_FLOW) break;
+                    pending[count++] = source;
                 }
             }
             if (count == MAX_FLOW) total = MAX_FLOW;
@@ -253,7 +348,7 @@ public final class DrainageModel {
                 Direction ta = tangents.computeIfAbsent(start.key, k -> tangent(start, samples.terrain, pending));
                 Direction tb = end.receiver == NO_CELL ? Direction.between(start, end)
                         : tangents.computeIfAbsent(end.key, k -> tangent(end, samples.terrain, pending));
-                raster.reach(start, end, riverLevel(start), riverLevel(end), flow, nextFlow,
+                raster.reach(start, end, waterLevel(start), waterLevel(end), flow, nextFlow,
                         Curve.between(start, end, ta, tb), 1, 1);
             }
         }
@@ -266,7 +361,7 @@ public final class DrainageModel {
                         int flow = flow(basin.center().key, pending, true);
                         long[] path = basin.path();
                         float level = basin.top();
-                        float endLevel = riverLevel(cell(basin.outlet()));
+                        float endLevel = waterLevel(cell(basin.outlet()));
                         for (int i = 1; i < path.length; i++) {
                             Cell a = cell(path[i - 1]), b = cell(path[i]);
                             float next = i <= basin.saddleIndex() ? level
@@ -343,7 +438,7 @@ public final class DrainageModel {
         final AtomicIntegerArray owner;
         final int slot;
         private int neighbour;
-        private List<Cell> spills;
+        private long[] spills;
         private int spill;
         ChannelFrame(Cell node) {
             this.node = node;
@@ -363,15 +458,8 @@ public final class DrainageModel {
                 Cell other = cell(gx + i % 3 - 1, gz + i / 3 - 1);
                 if (other.receiver == node.key) return other;
             }
-            if (spills == null) {
-                spills = new ArrayList<>();
-                int radius = DrainageBasin.SEARCH;
-                for (int tz = Math.floorDiv(gz - radius, CELLS); tz <= Math.floorDiv(gz + radius, CELLS); tz++)
-                    for (int tx = Math.floorDiv(gx - radius, CELLS); tx <= Math.floorDiv(gx + radius, CELLS); tx++)
-                        for (DrainageBasin basin : basins.get(tx, tz))
-                            if (basin.outlet() == node.key) spills.add(basin.center());
-            }
-            return spill < spills.size() ? spills.get(spill++) : null;
+            if (spills == null) spills = spillSources(gx, gz);
+            return spill < spills.length ? cell(spills[spill++]) : null;
         }
     }
 
@@ -567,14 +655,38 @@ public final class DrainageModel {
 
         void reach(Cell a, Cell b, float upstreamY, float downstreamY, int upstreamQ, int downstreamQ,
                    Curve curve, float upstreamConfinement, float downstreamConfinement) {
+            if (upstreamQ < MIN_FLOW) return;
             float grade = Math.max(0, upstreamY - downstreamY) / curve.length;
-            float maxWidth = width(Math.max(upstreamQ, downstreamQ), grade);
-            int margin = (int) Math.ceil(2 * maxWidth + 9);
-            int minX = Math.max(x0, Math.min(a.x, b.x) - margin);
-            int maxX = Math.min(x0 + SIDE - 1, Math.max(a.x, b.x) + margin);
-            int minZ = Math.max(z0, Math.min(a.z, b.z) - margin);
-            int maxZ = Math.min(z0 + SIDE - 1, Math.max(a.z, b.z) + margin);
+            // An incoming reach carries its own discharge up to the confluence.
+            // Interpolating to the receiver's TOTAL flow widens a tiny tributary
+            // into the trunk before the other tributaries have actually joined.
+            float maxWidth = width(upstreamQ, grade);
+            // Match the receiver stage at the expanded bank, not only at the
+            // abstract graph-node centre. Equal-width reaches keep their original
+            // longitudinal profile; only the additional receiving width advances
+            // the confluence. This does not create or remove any drainage edge.
+            float confluence = Math.max(0, width(downstreamQ, grade) - maxWidth);
+            float stageLength = Math.max(1, curve.length - confluence);
+            // Every evaluated line segment lies inside its sampled-vertex AABB.
+            // Outside the AABB expanded by the maximum 1.8-radius bank footprint,
+            // the old nearest-segment test could not write anything. Keep local
+            // coordinates until integer addition (also exact near world borders).
+            float lowX = curve.x[0], highX = lowX, lowZ = curve.z[0], highZ = lowZ;
+            for (int s = 1; s <= Curve.SEGMENTS; s++) {
+                lowX = Math.min(lowX, curve.x[s]); highX = Math.max(highX, curve.x[s]);
+                lowZ = Math.min(lowZ, curve.z[s]); highZ = Math.max(highZ, curve.z[s]);
+            }
+            int margin = (int) Math.ceil(Math.sqrt(3.24f) * maxWidth) + 1;
+            int minX = Math.max(x0, a.x + (int) Math.floor(lowX) - margin);
+            int maxX = Math.min(x0 + SIDE - 1, a.x + (int) Math.ceil(highX) + margin);
+            int minZ = Math.max(z0, a.z + (int) Math.floor(lowZ) - margin);
+            int maxZ = Math.min(z0 + SIDE - 1, a.z + (int) Math.ceil(highZ) + margin);
             if (minX > maxX || minZ > maxZ) return;
+            float flow = upstreamQ;
+            float depth = Math.min(4.5f, 0.8f + 0.075f * (float) Math.sqrt(flow) + 0.6f * grade);
+            boolean uniformConfinement = upstreamConfinement == downstreamConfinement;
+            float fixedConfinement = smooth(0.08f, 0.65f, upstreamConfinement);
+            float fixedWidth = Math.max(0.72f, maxWidth * fixedConfinement);
 
             for (int z = minZ; z <= maxZ; z++) {
                 for (int x = minX; x <= maxX; x++) {
@@ -589,21 +701,19 @@ public final class DrainageModel {
                             t = lerp(projection, curve.distance[s], curve.distance[s + 1]) / curve.length;
                         }
                     }
-                    float flow = lerp(t, upstreamQ, downstreamQ);
-                    if (flow < MIN_FLOW) continue;
-                    float confined = smooth(0.08f, 0.65f, lerp(t, upstreamConfinement, downstreamConfinement));
+                    float confined = uniformConfinement ? fixedConfinement
+                            : smooth(0.08f, 0.65f, lerp(t, upstreamConfinement, downstreamConfinement));
                     if (confined == 0) continue;
                     // Keep the voxelized centerline four-connected even for
                     // narrow sources and diagonal links (sqrt(1/2) < 0.72).
-                    float width = Math.max(0.72f, width(flow, grade) * confined);
+                    float width = uniformConfinement ? fixedWidth : Math.max(0.72f, maxWidth * confined);
                     if (best > 3.24f * width * width) continue;
                     float r = (float) Math.sqrt(best) / width;
-                    float level = lerp(t, upstreamY, downstreamY);
+                    float level = lerp(Math.min(1, t * curve.length / stageLength), upstreamY, downstreamY);
                     int top = (int) Math.floor(level + 0.0001f);
                     int i = (z - z0) * SIDE + x - x0;
                     float h = original(i, x, z);
                     if (a.ocean || b.ocean && h < downstreamY - 3) continue;
-                    float depth = Math.min(4.5f, 0.8f + 0.075f * (float) Math.sqrt(flow) + 0.6f * grade);
                     if (r <= 1 || (r <= 1.18f && h < top + 0.35f)) {
                         wet(i, h, top, top - Math.max(0.25f, depth * (1 - r * r * 0.88f)), 0);
                     } else if (water[i] == DRY) {
@@ -627,6 +737,7 @@ public final class DrainageModel {
     private static final class Grid {
         private final int x0, z0;
         private final Cell[] cells;
+        private final AtomicIntegerArray stage = new AtomicIntegerArray(CELLS * CELLS);
         private final AtomicIntegerArray rawFlow = new AtomicIntegerArray(CELLS * CELLS);
         private final AtomicIntegerArray flow = new AtomicIntegerArray(CELLS * CELLS);
 

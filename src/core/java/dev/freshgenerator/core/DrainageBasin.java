@@ -14,6 +14,13 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
     private static final int RADIUS = 96;
     private static final int DIAMETER = 2 * RADIUS + 1;
     private static final int MIN_AREA = 128;
+    // A non-ocean sink has floor(height)+1 as its minimum stage. This shared
+    // limit also bounds how far its backwater can affect upstream elevations.
+    static final int MAX_RISE_ABOVE_MINIMUM = 10;
+
+    static float maximumStage(float sinkHeight, int sea) {
+        return Math.max(sea - 1, (float) Math.floor(sinkHeight) + 1 + MAX_RISE_ABOVE_MINIMUM);
+    }
     private static final int MAX_AREA = 4800;
     private static final int[] CARDINAL = {-DIAMETER, -1, 1, DIAMETER};
 
@@ -47,7 +54,7 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
         // Runoff constrains the surface area that can balance evaporation.
         // A drier catchment has a smaller area budget for the same inflow.
         int areaBudget = Math.min(MAX_AREA, 60 + flow * (7 + 7 * center.runoff()));
-        int highest = Math.min(sill, minimum + 10);
+        int highest = Math.min(sill, minimum + MAX_RISE_ABOVE_MINIMUM);
         int[] queue = new int[areaBudget + 1];
         for (int level = highest; level >= minimum; level--) {
             BitSet flooded = flood(center, level, terrain, queue);

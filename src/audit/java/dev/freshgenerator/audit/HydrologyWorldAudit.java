@@ -54,6 +54,10 @@ public final class HydrologyWorldAudit implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        if ("true".equals(System.getenv("FG_HYDROLOGY_SETTLE"))) {
+            new HydrologySettlingAudit().onInitialize();
+            return;
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
                 var result = inspect(server);
@@ -68,7 +72,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         });
     }
 
-    private static Map<String, Object> inspect(MinecraftServer server) throws Exception {
+    static Map<String, Object> inspect(MinecraftServer server) throws Exception {
         ServerLevel level = server.overworld();
         var generator = (NoiseBasedChunkGenerator) level.getChunkSource().getGenerator();
         String mode = System.getenv().getOrDefault("FG_HYDROLOGY_MODE", "candidate");

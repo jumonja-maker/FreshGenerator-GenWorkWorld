@@ -1,0 +1,47 @@
+{
+  "seed": 2037157180504249802,
+  "windows": [
+    {
+      "site": {
+        "kind": "coastal-river",
+        "x": -1120,
+        "z": -768
+      }
+    },
+    {
+      "site": {
+        "kind": "foothill-river",
+        "x": 240,
+        "z": -448
+      }
+    },
+    {
+      "site": {
+        "kind": "mountain-river",
+        "x": 512,
+        "z": 112
+      }
+    },
+    {
+      "site": {
+        "kind": "high-lake",
+        "x": 640,
+        "z": 32
+      }
+    },
+    {
+      "site": {
+        "kind": "low-lake",
+        "x": 544,
+        "z": -2432
+      }
+    },
+    {
+      "site": {
+        "kind": "throughflow-lake",
+        "x": -3408,
+        "z": -112
+      }
+    }
+  ]
+}
