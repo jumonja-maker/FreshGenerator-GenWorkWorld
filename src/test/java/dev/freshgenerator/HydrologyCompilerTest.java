@@ -37,11 +37,39 @@ class HydrologyCompilerTest {
             assertTrue(candidate.containsKey(path), path);
             if (!original.equals(candidate.get(path))) changed.add(path);
         });
-        assertEquals(Set.of(HydrologyCompiler.SURFACE, HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, HydrologyCompiler.PRELIMINARY, BiomeRegionCompiler.SETTINGS,
+        assertEquals(Set.of(HydrologyCompiler.SURFACE, HydrologyCompiler.NATIVE_CAVES, HydrologyCompiler.HEIGHT, HydrologyCompiler.CAVE_WEIGHT, HydrologyCompiler.PRELIMINARY, BiomeRegionCompiler.SETTINGS,
                 HydrologyCompiler.BIOME_DEPTH, HydrologyCompiler.BIOME_TEMPERATURE, HydrologyCompiler.BIOME_MOISTURE), changed);
         assertEquals(baseline.size() + 7, candidate.size());
         assertEquals(baseline.get(HydrologyCompiler.HEIGHT), candidate.get(path(HYDROLOGY + "base_height")));
         assertEquals(baseline.get(HydrologyCompiler.CAVE_WEIGHT), candidate.get(path(HYDROLOGY + "base_cave_weight")));
+    }
+
+    @Test
+    void sharedNativeCavesAreWrappedWithoutChangingAnyInput() {
+        var cached = candidate.get(HydrologyCompiler.NATIVE_CAVES).getAsJsonObject();
+        assertEquals(Set.of("type", "input"), cached.keySet());
+        assertEquals("minecraft:cache", cached.get("type").getAsString());
+        assertEquals(baseline.get(HydrologyCompiler.NATIVE_CAVES), cached.get("input"),
+                "Caching must retain every original noise, seed, interpolation and blend input");
+        assertEquals(baseline.get(path(P + "final_density")), candidate.get(path(P + "final_density")),
+                "The native structure and blend graph must remain unchanged");
+    }
+
+    @Test
+    void surfaceCacheRetainsTheEntireReviewedExcavationCap() {
+        var cached = candidate.get(HydrologyCompiler.SURFACE).getAsJsonObject();
+        assertEquals(Set.of("type", "input"), cached.keySet());
+        assertEquals("minecraft:cache", cached.get("type").getAsString());
+        var cap = cached.getAsJsonObject("input");
+        assertEquals("minecraft:range_choice", cap.get("type").getAsString());
+        assertEquals(HYDROLOGY + "cut", cap.get("input").getAsString());
+        assertEquals(0.25, cap.get("min_inclusive").getAsDouble());
+        assertEquals(19, cap.get("max_exclusive").getAsInt());
+        assertEquals(baseline.get(HydrologyCompiler.SURFACE), cap.get("when_out_of_range"));
+        var minimum = cap.getAsJsonObject("when_in_range");
+        assertEquals("minecraft:min", minimum.get("type").getAsString());
+        assertEquals(baseline.get(HydrologyCompiler.SURFACE), minimum.get("left"));
+        assertEquals(P + "coherent/detail/original_surface_density", minimum.get("right").getAsString());
     }
 
     @Test

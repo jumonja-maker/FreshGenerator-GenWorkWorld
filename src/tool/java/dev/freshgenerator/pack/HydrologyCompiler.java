@@ -25,6 +25,7 @@ public final class HydrologyCompiler {
     private static final String HYDROLOGY = PREFIX + "coherent/hydrology/";
     private static final String MODEL = HYDROLOGY + "model";
     public static final String SURFACE = path(COHERENT + "surface_density");
+    public static final String NATIVE_CAVES = path(COHERENT + "native_cave_body");
     public static final String HEIGHT = path(COHERENT + "height");
     public static final String CAVE_WEIGHT = path(COHERENT + "cave_weight");
     public static final String PRELIMINARY = path(PREFIX + "preliminary_surface_level");
@@ -37,6 +38,7 @@ public final class HydrologyCompiler {
     public static void apply(Map<String, JsonElement> out) {
         JsonElement original = Objects.requireNonNull(out.get(HEIGHT), "Missing coherent height");
         JsonElement originalSurface = Objects.requireNonNull(out.get(SURFACE), "Missing coherent surface");
+        JsonElement originalNativeCaves = Objects.requireNonNull(out.get(NATIVE_CAVES), "Missing native cave body");
         JsonElement originalCaves = Objects.requireNonNull(out.get(CAVE_WEIGHT), "Missing cave envelope");
         JsonObject settings = Objects.requireNonNull(out.get(BiomeRegionCompiler.SETTINGS), "Missing Overworld settings")
                 .getAsJsonObject().deepCopy();
@@ -131,7 +133,12 @@ public final class HydrologyCompiler {
         excavated.addProperty("right", COHERENT + "detail/original_surface_density");
         surfaceLimit.add("when_in_range", excavated);
         surfaceLimit.add("when_out_of_range", originalSurface.deepCopy());
-        out.put(SURFACE, surfaceLimit);
+        // Both functions are shared by final density and alpine detail. Native
+        // per-SamplerContext caches reuse their exact results; do not simplify,
+        // resample or move any arithmetic, interpolation, seed or blend input.
+        // In particular, this is not a global cache across chunks or worlds.
+        out.put(SURFACE, cache(surfaceLimit));
+        out.put(NATIVE_CAVES, cache(originalNativeCaves.deepCopy()));
         out.put(PRELIMINARY, preliminary);
         out.put(BiomeRegionCompiler.SETTINGS, settings);
     }

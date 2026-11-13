@@ -162,6 +162,7 @@ public final class CoherentEnvelopeVerifier implements ModInitializer {
         r.addProperty("deep_cave_weight_samples",deep);r.addProperty("native_deep_cavity_samples",deepCavities);
         r.addProperty("max_sampled_height_step_per_block",maxNeighbourStep);
         r.add("alpine_detail",verifyAlpineDetail(server,state,height));
+        r.add("native_density_cache",NativeDensityCacheVerifier.verify(server,state));
         r.addProperty("scope","native density sampling; FULL topology and structures are audited separately; not a screenshot reproduction");
         Files.writeString(Path.of("freshgenerator-envelope.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r)+"\n");
         System.out.println("FRESHGENERATOR_ENVELOPE_PASS "+r);

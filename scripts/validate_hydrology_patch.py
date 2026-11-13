@@ -26,7 +26,8 @@ CLIMATE = {
 }
 MANIFEST = "freshgenerator-worldgen-manifest.json"
 SURFACE = DENSITY + "surface_density.json"
-CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS, PRELIMINARY, SURFACE} | CLIMATE
+NATIVE_CAVES = DENSITY + "native_cave_body.json"
+CHANGED = {HEIGHT, CAVE_WEIGHT, SETTINGS, PRELIMINARY, SURFACE, NATIVE_CAVES} | CLIMATE
 ADDED = {DENSITY + "hydrology/" + name + ".json"
          for name in ("base_height", "base_depth", "base_cave_weight", "cut", "model", "reference_cave_weight", "reference_roof_depth")}
 MIXINS = ["RandomStateHydrologyMixin", "ClimateSamplerHydrologyMixin", "BiomeSourceHydrologyMixin",
@@ -44,6 +45,20 @@ RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
 NEW_DIRECTORIES = {DENSITY + "hydrology/", "dev/freshgenerator/hydrology/"}
 ENTRYPOINT = "dev.freshgenerator.hydrology.HydrologyInitializer"
 DEBUG = {"label": "FreshGenerator drainage", "function": "freshgenerator:highlands_v2/coherent/hydrology/model"}
+
+
+def check_cached_density_graphs(previous_surface, previous_caves, surface, caves):
+    """Only transparent native caches around the two reviewed roots are allowed."""
+    expected_surface = {"type": "minecraft:range_choice",
+        "input": "freshgenerator:highlands_v2/coherent/hydrology/cut",
+        "min_inclusive": 0.25, "max_exclusive": 19,
+        "when_in_range": {"type": "minecraft:min", "left": previous_surface,
+            "right": "freshgenerator:highlands_v2/coherent/detail/original_surface_density"},
+        "when_out_of_range": previous_surface}
+    require(surface == {"type": "minecraft:cache", "input": expected_surface},
+            "Unexpected cached excavation surface cap")
+    require(caves == {"type": "minecraft:cache", "input": previous_caves},
+            "Native cave cache changed its original density graph")
 
 
 def check(reference, candidate):
@@ -81,15 +96,8 @@ def check(reference, candidate):
             expected = old.read(name).replace(b"freshgenerator:highlands_v2/coherent/depth_blocks",
                                               b"freshgenerator:highlands_v2/coherent/hydrology/base_depth")
             require(new.read(name) == expected, "Changed native regional climate: " + name)
-        # Only the reviewed excavation cap may change the alpine exterior.
-        surface = json.loads(new.read(SURFACE))
-        expected_surface = {"type": "minecraft:range_choice",
-            "input": "freshgenerator:highlands_v2/coherent/hydrology/cut",
-            "min_inclusive": 0.25, "max_exclusive": 19,
-            "when_in_range": {"type": "minecraft:min", "left": json.loads(old.read(SURFACE)),
-                "right": "freshgenerator:highlands_v2/coherent/detail/original_surface_density"},
-            "when_out_of_range": json.loads(old.read(SURFACE))}
-        require(surface == expected_surface, "Unexpected excavation surface cap")
+        check_cached_density_graphs(json.loads(old.read(SURFACE)), json.loads(old.read(NATIVE_CAVES)),
+                                    json.loads(new.read(SURFACE)), json.loads(new.read(NATIVE_CAVES)))
         for name in (HEIGHT, CAVE_WEIGHT):
             alias = DENSITY + "hydrology/base_" + Path(name).name
             require(new.read(alias) == old.read(name), "Original density must be retained byte-for-byte: " + name)
