@@ -1,0 +1,41 @@
+name: Build experimental natural rivers preview
+on:
+  push:
+    branches: [audit/natural-hydrology-preview]
+    paths: [.github/workflows/natural-hydrology-preview.yml]
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: contains(github.event.head_commit.message, '[preview-naturalism]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.8.2', cache-disabled: true}
+      - name: Canonical dependency fallback
+        run: |
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp scripts/central-fallback.init.gradle "$GRADLE_USER_HOME/init.d/freshgenerator-central-fallback.init.gradle"
+      - name: Build reproducible preview with exact dependency contract
+        run: |
+          gradle --no-daemon --console=plain clean jar sourcesJar
+          mkdir -p build/preview
+          sha256sum build/libs/*.jar > build/preview/jars.sha256
+          gradle --no-daemon --console=plain jar sourcesJar --rerun-tasks
+          sha256sum --check build/preview/jars.sha256
+          python3 scripts/validate_hydrology_patch.py
+          printf '%s\n' "$GITHUB_SHA" > build/preview/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreshGenerator-0.3.8-alpha.1-VISUAL-PREVIEW
+          path: |
+            build/libs/FreshGenerator-Fabric-26.3-0.3.8-alpha.1.jar
+            build/preview/jars.sha256
+            build/preview/source-commit.txt
+          if-no-files-found: error
+          retention-days: 7
