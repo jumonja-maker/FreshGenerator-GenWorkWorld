@@ -22,10 +22,11 @@ jobs:
         run: |
           import base64, gzip, hashlib, json, os, re, subprocess, urllib.request, urllib.parse
           from pathlib import Path
-          REPO=os.environ['REPO']; RUN=43328807182
-          SHA='d952a8328b659cf00902b7c23b334bc4f404e3c3'
+          REPO=os.environ['REPO']; RUN=43347296228
+          SHA='b891e204b1ee705afc82535cdca82e24ad35804e'
           root=Path('diagnosis'); root.mkdir()
           subprocess.run(['git','archive','--format=tar.gz','--output=diagnosis/source.tar.gz','HEAD'],check=True)
+          (root/'source-commit.txt').write_text(os.environ['GITHUB_SHA']+'\n')
           class SafeRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
                   result=super().redirect_request(req,fp,code,msg,headers,newurl)
@@ -41,8 +42,10 @@ jobs:
           jobs=get('/actions/runs/'+str(RUN)+'/jobs?per_page=100')['jobs']
           index=[]
           for job in jobs:
-              if job['conclusion']!='failure': continue
+              if job['conclusion'] not in ('success','failure'): continue
               log=get('/actions/jobs/'+str(job['id'])+'/logs',True).decode('utf-8-sig')
+              folder=root/str(job['id']); folder.mkdir()
+              (folder/'job.log').write_text(log)
               matches=re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)
               print(job['name'],[line for line in log.splitlines() if 'ValueError:' in line])
               if not matches: continue
@@ -51,8 +54,6 @@ jobs:
               assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==item['blob']
               bundle=json.loads(gzip.decompress(raw))
               assert bundle['identity']['GITHUB_SHA']==SHA and bundle['identity']['GITHUB_RUN_ID']==str(RUN)
-              folder=root/str(job['id']); folder.mkdir()
-              (folder/'job.log').write_text(log)
               (folder/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
               for name,entry in bundle['files'].items():
                   path=Path(name)
@@ -65,8 +66,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: hydrology-diagnosis-d952a83
+          name: hydrology-final-evidence-b891e20
           path: diagnosis/
           retention-days: 3
-          compression-level: 9
+          compression-level: 6
           if-no-files-found: error
