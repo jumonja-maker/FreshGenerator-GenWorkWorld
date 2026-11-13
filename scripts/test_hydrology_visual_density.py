@@ -52,6 +52,10 @@ class VisualHydrologyDensity(unittest.TestCase):
         for key in sorted(cls.before):
             old, now = cls.before[key], cls.after[key]
             stats.append({'shape':key[0], 'seed':key[1], 'before':old, 'after':now})
+        totals = {field: {'previous': sum(v[field] for v in cls.before.values()),
+                          'candidate': sum(v[field] for v in cls.after.values())}
+                  for field in ('river', 'lake', 'cut', 'raised')}
+        print('FRESHGENERATOR_VISUAL_DENSITY_SUMMARY ' + json.dumps(totals, sort_keys=True))
         destination.write_text(json.dumps({'scope':'fixed synthetic 128m tiles sampled every 4 blocks; not real Minecraft FULL world',
                                             'reference':'0.3.7-alpha.1', 'candidate':'0.3.8-alpha.1',
                                             'observations':stats}, indent=2) + '\\n', encoding='utf8')
