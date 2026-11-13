@@ -1,0 +1,53 @@
+name: Prepare verified native density-cache optimization
+on:
+  push:
+    branches: [audit/hydrology-performance]
+    paths: [.github/workflows/hydrology-cache-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Verify exact reviewed patch and create an unattached commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,subprocess,urllib.request
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          parent='6449741860fb0e8daf87ebaad3537b6b2211b5eb'
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          subprocess.run(['git','checkout','--detach',parent],check=True)
+          patch=gzip.decompress(base64.b64decode('H4sIAAAAAAAC/+V9a3MbR5Lgd/2KGkzcCTAbTTxIgBQthykKlOgVH0FSHnu8DriBLpA9anTjuht8aKwIS/asZ9fedXjjHhv32I257xdBy5JNy5L84f4A+Rful1xmVlW/8SDF2ccdHSaB7qqsrHxnVnbLtHo9Vi7vWQEzZk2368/uH5uea7t7x2WTO74VHJe7Rneflyt6XV/Q+ybrTDfumsMPWc+yOeu7JmfVSqUxN3fNckx+xCriR9cX58x6dWH+WrlcZrMmP5h1hrZ9bWZmZupV3n2XlStahc1Utfo8e/fdazO/ZnTzBjv75ez12dPzJ2evzz87ewWfn7Oz0/PHdPnn86/PfsTbZydw6xRv/XL2M4x8giPPH8Pf52c/sbPv4M+PMA0Gv4SPr+j/0/Nv2Nn38PE1Xjx/AuBPz06vzVybOfsW4P14dnKDfQK7XWzOVRcalV6nwhdMo7fUMOvz9Wan0anVqtXOPO98orGtbfZ/vvjPDZ2d/S/EFlABiK/PniGeZz+IJRHDF4TsM/jy7OwERp5oDDFiMO6X888B15/h1otwV6/Ov8ItIUsMMH5MPbDVVRQ=='))
+          assert hashlib.sha256(patch).hexdigest()=='05af49a24ded6fc47d6d716496927488bdc11bd362c15dee8cea54e24dbea37d'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          expected={
+            'docs/hydrology-density-cache-0.3.8.md':'13620f5dd8298b11abd3d4c909828690dc9fd49820e1e9a82e306c3acb24c569',
+            'scripts/test_hydrology_density_cache.py':'bb2514e466ae770d92854ee99fcef5cc7b2090b7f59c14e12d476057f3fe26d3',
+            'scripts/validate_hydrology_patch.py':'d8444a10b3a0dc1d17c50a41d1d002e930f2a42741597424d5843ee059e03f30',
+            'src/audit/java/dev/freshgenerator/audit/CoherentEnvelopeVerifier.java':'708012d7bf044187e9a074597cd25bde74db827b294eaf2dea8faa12254f6c0b',
+            'src/audit/java/dev/freshgenerator/audit/NativeDensityCacheVerifier.java':'47779af787b0a4a26cf5efa8e17556321b5e7ab0dfbee690a10a9180b6ac53b9',
+            'src/test/java/dev/freshgenerator/HydrologyCompilerTest.java':'a35c795561d8c1bdfd3456ed9484965be034b287d9cc6bddde7b28381d3d1589',
+            'src/test/java/dev/freshgenerator/audit/NativeDensityCacheVerifierTest.java':'8d2b512b97acb6b455848f30613f4ebbd7f50e1ebdcd4a5887c904859bb80993',
+            'src/test/java/dev/freshgenerator/hydrology/NativeDensityCacheTest.java':'9f4c7b73582af67681cc511928af84f497001e7caedafc52c9dc4a247add7764',
+            'src/tool/java/dev/freshgenerator/pack/HydrologyCompiler.java':'3a9a3a31d07a4fd90e7d340fda2bc1d43c56a79f948d88a4e75b8cffa4860fe2'}
+          for path,sha in expected.items(): assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==sha,path
+          subprocess.run(['git','diff','--check'],check=True)
+          subprocess.run(['python3','scripts/test_hydrology_density_cache.py'],check=True)
+          def post(endpoint,body):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+endpoint,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
+          entries=[]
+          for path in expected:
+              blob=post('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=post('/git/trees',{'base_tree':'60789e8ac6deb080b670b22375bac27b138fbfb1','tree':entries})
+          commit=post('/git/commits',{'message':'perf: reuse exact shared native surface and cave densities\n\nAdd only native per-context caches around the reviewed surface cap and unchanged native cave body. No resampling, arithmetic reordering, seed, river geometry or runtime class changes. Tight packaged checks require both exact wrappers.\n\n318 real-API Java and 196 Python tests pass locally. Five native Minecraft seeds match 1292800 float-bit comparisons including point/volume reuse, mixed and parallel contexts. Make the equivalence verifier mandatory in the structural audit; retain adversarial checks for one-ULP changes, signed zero and non-finite values.\n\nPreliminary isolated ABBA on 288 FULL chunks: 36.606s before vs30.405s after (-16.9%) in this sample, not FPS or universal performance proof. Full canonical CI and final paired measurements remain required. Main is not changed.','tree':tree['sha'],'parents':[parent]})
+          print('FRESHGENERATOR_PREPARED_CACHE_COMMIT',commit['sha'])
+          print('VERIFIED_FILE_SHA256',json.dumps(expected,sort_keys=True))
