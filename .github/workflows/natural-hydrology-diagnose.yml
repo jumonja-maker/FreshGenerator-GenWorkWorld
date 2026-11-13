@@ -26,7 +26,7 @@ jobs:
           with urllib.request.urlopen(request,timeout=80) as f:
               entry=json.load(f)
           raw=base64.b64decode(entry['content'])
-          assert hashlib.sha1(('blob '+str(len(raw))+'\\0').encode()+raw).hexdigest()==SHA
+          assert hashlib.sha1(('blob '+str(len(raw))+chr(0)).encode()+raw).hexdigest()==SHA
           bundle=json.loads(gzip.decompress(raw))
           assert bundle['identity']['GITHUB_RUN_ID']=='43401813810'
           assert bundle['identity']['GITHUB_SHA']=='9e2c02e3ffdb5388ee0d6645474765da79e7a05c'
