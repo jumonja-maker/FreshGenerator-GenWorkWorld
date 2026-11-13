@@ -2,7 +2,8 @@
 
 The gate rejects newly flooded dry columns, disappearing planned sources/ice,
 changed bare-ground heights and continued water-top changes from tick 200 to
-1000. In-channel water-top changes before tick 200 are reported explicitly, NOT
+1000. Multi-block water-top changes also fail; one-block in-channel adjustments
+before tick 200 are reported explicitly, NOT
 called a perfect match of the static surface. This finite gate is not a proof of
 worldwide hydrologic or visual correctness.
 """
@@ -16,6 +17,9 @@ from village_checks import require
 SIDE = 33
 MISSING = -999
 TICKS = (0, 200, 1000)
+# A one-block voxel/flow transition is reported, not mistaken for a static match.
+# Larger adjustments reproduce the unintended backwater steps and block release.
+MAX_TRANSIENT_STAGE_ADJUSTMENT = 1
 
 
 def check(plan, snapshots, meta):
@@ -61,15 +65,18 @@ def check(plan, snapshots, meta):
                 if a[2] != MISSING and b[2] != MISSING and a[2] != b[2]:
                     changes.append({**pos, 'before': a[2], 'after': b[2], 'difference': b[2] - a[2]})
                 if tick == 1000 and b[2] != snapshots[200]['windows'][i]['columns'][j][2]: unstable.append(pos)
+            large_stage_changes = [c for c in changes if abs(c['difference']) > MAX_TRANSIENT_STAGE_ADJUSTMENT]
             ground_changes = sum(a != b for a, b in zip(old['modelGround'], current['modelGround']))
             flags = sum(bool(c[5] and c[4] & (4 | 8)) for c in current['columns'])
             row = {'site': window['site'], 'tick': tick, 'new_wet_columns': newly_wet,
                    'dried_modeled_columns': dry, 'changed_existing_water_tops': changes,
+                   'large_water_stage_changes': large_stage_changes,
                    'ground_height_changes': ground_changes, 'unsupported_or_lava_columns': flags,
                    'changes_since_tick_200': unstable}
             metrics.append(row)
             if newly_wet: errors.append(f"{window['site']} tick {tick}: newly flooded dry columns")
             if dry or ground_changes or flags: errors.append(f"{window['site']} tick {tick}: water/terrain safety regression")
+            if large_stage_changes: errors.append(f"{window['site']} tick {tick}: multi-block water-stage adjustment")
             if unstable: errors.append(f"{window['site']} tick {tick}: water top still changing after 200 ticks")
     return {'seed': plan['seed'], 'jar_sha256': sha, 'planned_columns': planned,
             'completed_server_ticks': 1000, 'new_dry_land_flooding_pass': not errors,

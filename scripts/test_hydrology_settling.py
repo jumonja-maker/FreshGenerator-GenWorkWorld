@@ -36,6 +36,14 @@ class SettlingEvidenceTest(unittest.TestCase):
         report = self.result()
         self.assertTrue(report['new_dry_land_flooding_pass'])
         self.assertEqual(1, report['windows'][0]['changed_existing_water_tops'][0]['difference'])
+    def test_multi_block_rise_cannot_hide_inside_already_wet_channel(self):
+        for t in (200, 1000): self.snap[t]['windows'][0]['columns'][0][2] += 4
+        report = self.result()
+        self.assertFalse(report['new_dry_land_flooding_pass'])
+        self.assertEqual(4, report['windows'][0]['large_water_stage_changes'][0]['difference'])
+    def test_multi_block_drop_also_fails(self):
+        for t in (200, 1000): self.snap[t]['windows'][0]['columns'][0][2] -= 2
+        self.assertFalse(self.result()['new_dry_land_flooding_pass'])
     def test_continued_rise_at_1000_fails(self):
         self.snap[1000]['windows'][0]['columns'][0][2] += 1
         self.assertFalse(self.result()['new_dry_land_flooding_pass'])
