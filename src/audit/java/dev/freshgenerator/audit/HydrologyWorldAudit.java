@@ -49,7 +49,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
     record Plan(long seed, List<Window> windows) { }
     record Observation(Site site, int[][] columns, Map<String, Integer> surfaceBiomes,
                        Map<String, String> blocksAtMissingStages, List<String> blockPalette,
-                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround) { }
+                       int[] fullBlockStates, String nativeGeometrySha256, int[] modelGround, Map<String, String> groundStates) { }
     record TerrainFingerprint(Site site, String blocksSha256, String biomesSha256) { }
 
     @Override
@@ -217,6 +217,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
         Map<String, Integer> palette = new LinkedHashMap<>();
         int[] fullStates = normal ? new int[SIDE * SIDE * 384] : new int[0];
         int[] modelGround = candidateHydrology ? new int[SIDE * SIDE] : new int[0];
+        Map<String, String> groundStates = new TreeMap<>();
         MessageDigest geometry = MessageDigest.getInstance("SHA-256");
         for (int dz = 0; dz < SIDE; dz++) {
             for (int dx = 0; dx < SIDE; dx++) {
@@ -293,6 +294,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
                                 && !state.is(Blocks.RED_MUSHROOM_BLOCK) && !state.is(Blocks.MUSHROOM_STEM)
                                 && state.getFluidState().isEmpty()) {
                             modelGround[i] = y;
+                            groundStates.put(x + "," + y + "," + z, state.toString());
                             break;
                         }
                     }
@@ -311,7 +313,7 @@ public final class HydrologyWorldAudit implements ModInitializer {
             }
         }
         return new Observation(window.site, columns, biomes, missingStages, List.copyOf(palette.keySet()), fullStates,
-                HexFormat.of().formatHex(geometry.digest()), modelGround);
+                HexFormat.of().formatHex(geometry.digest()), modelGround, groundStates);
     }
 
     private static boolean isWater(BlockState state) {

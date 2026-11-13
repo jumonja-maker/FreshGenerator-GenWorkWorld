@@ -76,8 +76,11 @@ public final class HydrologyAquifer implements Aquifer {
             int profile = sealProfiles[i];
             // Below the adjoining channel bed, its own solid seal already
             // separates the water from any cave under the dry bank.
-            if (profile != DrainageModel.DRY && y > DrainageModel.floor(profile)
-                    && y <= DrainageModel.waterTop(profile)) return true;
+            // The native aquifer already fills passages at/below sea level.
+            // Sealing an unmodified neighboring column there would leave a
+            // floating soil plug where the original carver produced water.
+            if (profile != DrainageModel.DRY && DrainageModel.waterTop(profile) >= seaLevel
+                    && y > DrainageModel.floor(profile) && y <= DrainageModel.waterTop(profile)) return true;
         }
         return false;
     }

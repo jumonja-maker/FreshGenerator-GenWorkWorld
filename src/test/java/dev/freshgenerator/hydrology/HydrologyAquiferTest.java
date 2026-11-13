@@ -28,7 +28,7 @@ class HydrologyAquiferTest {
         int[] profiles = {source.applyAsInt(x - 1, z),
                 source.applyAsInt(x + 1, z), source.applyAsInt(x, z - 1), source.applyAsInt(x, z + 1)};
         for (int p : profiles) {
-            if (p != DrainageModel.DRY && y > DrainageModel.floor(p) && y <= DrainageModel.waterTop(p)) return true;
+            if (p != DrainageModel.DRY && DrainageModel.waterTop(p) >= SEA && y > DrainageModel.floor(p) && y <= DrainageModel.waterTop(p)) return true;
         }
         return false;
     }
@@ -52,12 +52,21 @@ class HydrologyAquiferTest {
     @Test
     void aDryBankProtectsItsWaterlineAndRetainsTheNativeCaveBelow() {
         var aquifer = new HydrologyAquifer(NATIVE,
-                (x, z) -> x == -1 && z == 0 ? profile(59, 62) : DrainageModel.DRY, SEA);
-        assertFalse(aquifer.protects(0, 56, 0));
-        assertFalse(aquifer.protects(0, 59, 0));
-        assertTrue(aquifer.protects(0, 60, 0));
-        assertTrue(aquifer.protects(0, 62, 0));
-        assertTrue(aquifer.protects(-1, 56, 0));
+                (x, z) -> x == -1 && z == 0 ? profile(99, 102) : DrainageModel.DRY, SEA);
+        assertFalse(aquifer.protects(0, 96, 0));
+        assertFalse(aquifer.protects(0, 99, 0));
+        assertTrue(aquifer.protects(0, 100, 0));
+        assertTrue(aquifer.protects(0, 102, 0));
+        assertTrue(aquifer.protects(-1, 96, 0));
+    }
+
+    @Test
+    void aSeaLevelChannelDoesNotFillAnUnmodifiedUnderwaterPassageWithSoil() {
+        var aquifer = new HydrologyAquifer(NATIVE,
+                (x, z) -> x == 1 && z == 0 ? profile(55, 62) : DrainageModel.DRY, SEA);
+        for (int y = 48; y <= 64; y++) assertFalse(aquifer.protects(0, y, 0));
+        assertTrue(aquifer.protects(1, 53, 0), "The channel's own bed remains sealed");
+        assertTrue(aquifer.protects(1, 60, 0));
     }
 
     @Test

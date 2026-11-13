@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.CarvingMask;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -32,7 +33,16 @@ abstract class HydrologyCarverMixin {
             // Quart-cell river biomes are stored for ecology and features. Their
             // fuzzy block lookup must not replace the neighboring desert's soil.
             var generator = (NoiseBasedChunkGenerator) (Object) this;
-            biomes = biomes.withDifferentSource(generator.getBiomeSource().createCachingResolver(state));
+            var stored = biomes;
+            var climate = generator.getBiomeSource().createCachingResolver(state);
+            biomes = biomes.withDifferentSource((qx, qy, qz) -> {
+                var biome = stored.getNoiseBiomeAtQuart(qx, qy, qz);
+                // Preserve the exact chunk-native biome selection outside a
+                // substituted river. A scalar re-query can resolve climate
+                // boundary ties differently from the native batched lookup.
+                return biome.is(Biomes.RIVER) || biome.is(Biomes.FROZEN_RIVER)
+                        ? climate.getNoiseBiome(qx, qy, qz) : biome;
+            });
         }
         original.call(surface, state, biomes, generation, chunk, noise, materials, possibleBiomes);
     }

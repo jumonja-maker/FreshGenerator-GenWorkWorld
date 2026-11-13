@@ -71,7 +71,7 @@ public record DrainageDensity(DensityFunction terrain, DensityFunction continent
         private final DrainageModel model;
         private final int seaLevel;
 
-        private Sampler(DensitySampler terrain, DensitySampler continents, DensitySampler moisture, int seaLevel, long seed, int heightGrid) {
+        Sampler(DensitySampler terrain, DensitySampler continents, DensitySampler moisture, int seaLevel, long seed, int heightGrid) {
             this.terrain = new OriginalHeight(terrain, heightGrid);
             this.seaLevel = seaLevel;
             model = new DrainageModel(seed, seaLevel, () -> {
@@ -91,6 +91,19 @@ public record DrainageDensity(DensityFunction terrain, DensityFunction continent
 
         public int waterAt(int x, int z) {
             return tile(x, z).waterAt(x, z);
+        }
+
+        /** A native wide trunk must not build new soil above a dry river bank.
+         * Use the immutable terrain envelope, not already-decorated neighbors. */
+        public boolean wouldRaiseDryBank(int x, int soilY, int z) {
+            var tile = tile(x, z);
+            if (tile.waterAt(x, z) != DrainageModel.DRY) return false;
+            if (waterAt(x - 1, z) == DrainageModel.DRY && waterAt(x + 1, z) == DrainageModel.DRY
+                    && waterAt(x, z - 1) == DrainageModel.DRY && waterAt(x, z + 1) == DrainageModel.DRY)
+                return false;
+            SamplerContext context = SamplerContext.builder().enableCaches().build();
+            float height = terrain.at(context, x, z) - tile.cutAt(x, z);
+            return soilY >= Math.ceil(height);
         }
 
         public float originalHeightAt(SamplerContext context, int x, int z) {

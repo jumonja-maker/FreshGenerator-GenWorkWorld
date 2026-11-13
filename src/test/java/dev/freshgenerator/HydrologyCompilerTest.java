@@ -95,6 +95,29 @@ class HydrologyCompilerTest {
     }
 
     @Test
+    void lowlandRiverDoesNotResealDeepPublishedCaves() {
+        for (double height : new double[]{64, 76.505203, 90, 109.99}) {
+            for (double cut : new double[]{-2.25, 0, 0.25, 3.000145, 18}) {
+                for (int depth = 12; depth <= 64; depth++) {
+                    assertEquals(1, caveWeight(cut, height, depth), 1e-5,
+                            "Deep lowland cave changed at height=" + height + ", depth=" + depth);
+                }
+            }
+        }
+    }
+
+    @Test
+    void unmodifiedColumnsAndDeepMountainCavesKeepTheirOriginalWeight() {
+        for (double height : new double[]{56, 76, 112.25, 180, 300}) {
+            for (int depth = 0; depth <= 64; depth++)
+                assertEquals(1, caveWeight(0, height, depth), 1e-5);
+            for (double cut : new double[]{-2.25, 0.25, 18})
+                for (int depth = 22; depth <= 64; depth++)
+                    assertEquals(1, caveWeight(cut, height, depth), 1e-5);
+        }
+    }
+
+    @Test
     void heightSubtractsTheSharedDrainageCut() {
         var values = new HashMap<>(Map.of(HYDROLOGY + "base_height", 74.0, HYDROLOGY + "cut", 13.0));
         assertEquals(61, evaluate(candidate.get(HydrologyCompiler.HEIGHT), values), 1e-5);

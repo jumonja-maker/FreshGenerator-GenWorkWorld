@@ -34,6 +34,14 @@ abstract class TreeHydrologyMixin {
                     callback.setReturnValue(false);
                     return;
                 }
+                if (water == DrainageModel.DRY && drainage.wouldRaiseDryBank(
+                        origin.getX() + dx, origin.getY() - 1, origin.getZ() + dz)) {
+                    // Large trunks can put below-trunk dirt into neighboring
+                    // air even when their origin is on solid ground. Reject
+                    // that placement instead of altering a stream's bank.
+                    callback.setReturnValue(false);
+                    return;
+                }
             }
         }
     }

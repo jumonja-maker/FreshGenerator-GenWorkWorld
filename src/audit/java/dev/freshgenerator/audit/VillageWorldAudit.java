@@ -210,7 +210,13 @@ public final class VillageWorldAudit implements ModInitializer {
                 pos.set(x,y,z);var b=chunk.getBlockState(pos);String name=id(b);
                 boolean path=name.equals("minecraft:dirt_path");
                 boolean bridge=street&&isStreetBridge(s.location.id,name)
-                        &&(chunk.getFluidState(pos.below()).is(FluidTags.WATER)||chunk.getBlockState(pos.below()).is(Blocks.ICE));
+                        &&(chunk.getFluidState(pos.below()).is(FluidTags.WATER)
+                            ||chunk.getBlockState(pos.below()).is(Blocks.ICE)
+                            ||chunk.getBlockState(pos.below()).isSolid())
+                        &&passable(pos.above())&&passable(pos.above(2));
+                // Native street processors can retain a deck after the bank
+                // below it becomes solid. Exact street coordinates and walkable
+                // headroom, not the fluid underneath, identify that crossing.
                 if(path||bridge){
                     if(path)pathBlocks++;
                     roadY=y;roadBlock=name;

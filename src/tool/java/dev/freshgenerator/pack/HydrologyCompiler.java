@@ -82,18 +82,18 @@ public final class HydrologyCompiler {
                 "left", Map.of("type", "minecraft:blend_alpha"), "right", MODEL))));
         JsonElement height = cache(sub(base, cut));
 
-        // A raised bank can cross the mountain threshold or put the old cave
-        // transition closer to the surface. Keep the stronger of the original
-        // cave protection and the mountain roof at the final elevation.
+        // Preserve the published cave field outside the actual excavation.
+        // A shallow bank crossing the highland threshold needs its whole roof,
+        // but must not re-grade lowland caves forty blocks below a small river.
         DensityExpr depth = ref(COHERENT + "depth_blocks");
-        DensityExpr mountainRoof = mul(ref(COHERENT + "mountain_protection"),
-                fade(CoherentSurfaceCompiler.MOUNTAIN_ROOF, CoherentSurfaceCompiler.FULL_CAVE_DEPTH, depth));
-        DensityExpr caveEnvelope = new Binary(Op.MIN, ref(HYDROLOGY + "reference_cave_weight"),
-                sub(constant(1), mountainRoof));
-
-        // Seal a separate, shallower band beneath cut beds and raised banks.
         DensityExpr bankOrBed = new Binary(Op.MAX, cut, mul(constant(-1), cut));
         DensityExpr newBed = clamp01(mul(constant(4), bankOrBed));
+        DensityExpr highland = smooth(CoherentSurfaceCompiler.MOUNTAIN_FULL - 2,
+                CoherentSurfaceCompiler.MOUNTAIN_FULL, ref(COHERENT + "height"));
+        DensityExpr mountainRoof = mul(newBed, mul(highland,
+                fade(CoherentSurfaceCompiler.MOUNTAIN_ROOF, 22, depth)));
+        DensityExpr caveEnvelope = new Binary(Op.MIN, ref(HYDROLOGY + "reference_cave_weight"),
+                sub(constant(1), mountainRoof));
         JsonElement caveWeight = GSON.toJsonTree(mul(caveEnvelope,
                 sub(constant(1), mul(newBed, fade(5, 12, depth)))).json());
 
