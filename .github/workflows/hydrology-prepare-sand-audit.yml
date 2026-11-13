@@ -1,0 +1,56 @@
+name: Prepare verified native sediment road audit
+on:
+  push:
+    branches: [fix/lake-river-generation-v2]
+    paths: [.github/workflows/hydrology-prepare-sand-audit.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: contains(github.event.head_commit.message, '[prepare-sand-audit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 2}
+      - name: Verify the three bounded source transformations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib,json,os,subprocess,urllib.request
+          from pathlib import Path
+          def git(*args):return subprocess.check_output(['git',*args]).decode().strip()
+          assert os.environ['GITHUB_REF']=='refs/heads/fix/lake-river-generation-v2'
+          assert os.environ['GITHUB_REPOSITORY']=='jumonja-maker/FreshGenerator-GenWorkWorld'
+          assert git('rev-parse','HEAD^')=='2e9f1e97ec625fcf278ae810c404d8e470027649'
+          changes={
+            'src/audit/java/dev/freshgenerator/audit/VillageWorldAudit.java':('0695f833012495b450fd5d1b0e100de350de6061','16071e5698a4a495d1cb360046ab80f33d9a807d',[
+              ('name.equals("minecraft:grass_block")||name.equals("minecraft:gravel")','name.equals("minecraft:grass_block")||name.equals("minecraft:gravel")||name.equals("minecraft:sand")'),
+              ('a later native disk feature can replace that grass with gravel.','a later native disk feature can replace that grass with gravel or sand.')]),
+            'scripts/hydrology_village_checks.py':('75e4487a2fc3ad7c4895fa102dca382109623fa9','c34badd79af224aa081f43a5012be9ac09a28f1e',[
+              ("patches_allowed = {'minecraft:grass_block', 'minecraft:gravel'}","patches_allowed = {'minecraft:grass_block', 'minecraft:gravel', 'minecraft:sand'}")]),
+            'scripts/test_hydrology_acceptance.py':('43c264e073fd8968d328d957be1ee8cfc9ce28c3','1ce2c4a4f292b40f43c6d6b3bc83b405ec492919',[
+              ("for material in ('minecraft:grass_block', 'minecraft:gravel'):","for material in ('minecraft:grass_block', 'minecraft:gravel', 'minecraft:sand'):"),
+              ('def test_native_grass_and_gravel_patches_need_template_identity_and_clear_headroom','def test_native_disk_patches_need_template_identity_and_clear_headroom')])}
+          def blob_hash(data):return hashlib.sha1(('blob '+str(len(data))+'\0').encode()+data).hexdigest()
+          for path,(before,after,pairs) in changes.items():
+              p=Path(path);assert blob_hash(p.read_bytes())==before
+              text=p.read_text()
+              for old,new in pairs:
+                  assert text.count(old)==1
+                  text=text.replace(old,new)
+              p.write_text(text);assert blob_hash(p.read_bytes())==after
+          subprocess.run(['python3','scripts/test_hydrology_acceptance.py'],check=True)
+          subprocess.run(['git','diff','--check'],check=True)
+          def post(endpoint,body):
+              request=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+endpoint,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+              with urllib.request.urlopen(request,timeout=60) as response:return json.load(response)
+          entries=[]
+          for path,(_,after,_) in changes.items():
+              blob=post('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'});assert blob['sha']==after
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':after})
+          entries.append({'path':'.github/workflows/hydrology-prepare-sand-audit.yml','mode':'100644','type':'blob','sha':None})
+          tree=post('/git/trees',{'base_tree':git('rev-parse','HEAD^{tree}'),'tree':entries})
+          commit=post('/git/commits',{'message':'test: recognize native sand patches only on verified walkable streets\n\nRead-only native setBlock tracing on seed 1337 shows the source DIRT_PATH processor keeps grass at (-10204,62,6726) and (-10203,62,6726), then native DiskFeature replaces it with sand. The two remaining negative-seed columns likewise contain supported sand at the exact street stencil. Admit sand under the same source identity, support and two-block headroom requirements as gravel, with mutation coverage. No production generator changes or removal of missing-road gates.', 'tree':tree['sha'],'parents':[os.environ['GITHUB_SHA']]})
+          print('FRESHGENERATOR_PREPARED_SAND_COMMIT '+commit['sha'])
