@@ -1,0 +1,63 @@
+name: Diagnose exact missing water in connected lake
+on:
+  push:
+    branches: [audit/natural-hydrology-preview]
+    paths: [.github/workflows/natural-hydrology-diagnose.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: contains(github.event.head_commit.message, '[inspect-lake]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Inspect SHA-verified original native FULL evidence without rerunning server
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import os, gzip, base64, json, hashlib, urllib.request
+          SHA='3ee61d8d8eaa9f1e2b455a9cad1228f4d1599c7a'
+          REPO='jumonja-maker/FreshGenerator-GenWorkWorld'
+          request=urllib.request.Request('https://api.github.com/repos/'+REPO+'/git/blobs/'+SHA,
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=80) as f:
+              entry=json.load(f)
+          raw=base64.b64decode(entry['content'])
+          assert hashlib.sha1(('blob '+str(len(raw))+'\\0').encode()+raw).hexdigest()==SHA
+          bundle=json.loads(gzip.decompress(raw))
+          assert bundle['identity']['GITHUB_RUN_ID']=='43401813810'
+          assert bundle['identity']['GITHUB_SHA']=='9e2c02e3ffdb5388ee0d6645474765da79e7a05c'
+          files=bundle['files']
+          print('EVIDENCE_FILES',list(files))
+          def parse(name):
+              matches=[key for key in files if key.endswith(name)]
+              assert len(matches)==1,(name,matches)
+              item=files[matches[0]]
+              data=base64.b64decode(item['content'])
+              assert hashlib.sha256(data).hexdigest()==item['sha256']
+              return json.loads(data)
+          observed=parse('candidate.json')
+          baseline=parse('baseline.json')
+          plan=parse('plan.json')
+          for idx,(candidate,old,expected) in enumerate(zip(observed['windows'],baseline['windows'],plan['windows'])):
+              site=expected['site']
+              if site['kind']!='throughflow-lake':continue
+              changed=[]
+              for pos,(block,prior,p) in enumerate(zip(candidate['columns'],old['columns'],expected['profiles'])):
+                  if not p:continue
+                  correct=block[2]==p>>16 and block[2]!=-999 and block[4]&3!=0
+                  if not correct:
+                      x=site['x']+pos%33-16
+                      z=site['z']+pos//33-16
+                      key=str(x)+','+str(p>>16)+','+str(z)
+                      changed.append({'x':x,'z':z,'expected_level':p>>16,'lake':bool(p&1),
+                       'floor':(p<<16)>>18,'blocks':block,'baseline':prior,
+                       'observed_block':candidate.get('blocksAtMissingStages',{}).get(key),
+                       'model_ground':candidate.get('modelGround',[None]*1089)[pos]})
+              total=sum(p!=0 for p in expected['profiles'])
+              print('LAKE_WINDOW',json.dumps({'site':site,'planned':total,'missing':len(changed),
+                    'percent':round(len(changed)/total*100,3),'samples':changed[:120]}))
+          print('DIAGNOSIS_COMPLETE')
