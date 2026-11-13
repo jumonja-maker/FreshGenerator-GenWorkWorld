@@ -11,6 +11,11 @@ import java.util.function.IntBinaryOperator;
 
 /** Surface sources enter the native noise fill before materials, carvers and features. */
 public final class HydrologyAquifer implements Aquifer {
+    // Share the existing four-block carver seal with native noise fill. At four
+    // blocks below the height envelope, squeeze(0.08 * depth) > 0.12, the maximum
+    // alpine correction. Sealing only the top voxel can leave that voxel hanging
+    // over a second negative-density sample. Never extend this into deep caves.
+    static final int BED_SEAL_DEPTH = 4;
     private final Aquifer nativeAquifer;
     private final IntBinaryOperator water;
     private final IntBinaryOperator alteredBank;
@@ -56,12 +61,11 @@ public final class HydrologyAquifer implements Aquifer {
                 lastZ = z;
                 hasColumn = true;
             }
-            // The 3-D alpine relief may shave the very last voxel of the
-            // height-field bed. Its negative density must not leave an air gap
-            // immediately below a source column. Null selects the generator's
-            // default solid block; native material rules still finish its surface.
-            // Only the exact modeled floor is sealed, never the deep cave below.
-            if (column != DrainageModel.DRY && y == DrainageModel.floor(column)) {
+            // Fill the same shallow bed interval that carvers already protect.
+            // Null selects default terrain; native material rules finish the bed.
+            // Positive-density terrain, dry columns and deeper caves stay native.
+            if (column != DrainageModel.DRY && y <= DrainageModel.floor(column)
+                    && y >= DrainageModel.floor(column) - BED_SEAL_DEPTH) {
                 surfaceOverride = true;
                 return null;
             }
@@ -111,6 +115,6 @@ public final class HydrologyAquifer implements Aquifer {
     }
 
     private static boolean withinSeal(int profile, int y) {
-        return profile != DrainageModel.DRY && y >= DrainageModel.floor(profile) - 4 && y <= DrainageModel.waterTop(profile) + 1;
+        return profile != DrainageModel.DRY && y >= DrainageModel.floor(profile) - BED_SEAL_DEPTH && y <= DrainageModel.waterTop(profile) + 1;
     }
 }
