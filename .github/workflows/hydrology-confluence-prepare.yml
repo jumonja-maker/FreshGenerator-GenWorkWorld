@@ -1,0 +1,75 @@
+name: Prepare reviewed backwater and confluence correction
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/hydrology-confluence-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Verify exact patch and prepare commit without moving any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          parent='62e1039c77b8a2212830c80469e5121eeca7f233'
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          def api(path, data=None):
+              request=urllib.request.Request('https://api.github.com/repos/'+repo+path,
+                  data=None if data is None else json.dumps(data).encode(),
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                    'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+                  method='GET' if data is None else 'POST')
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          pieces=[]
+          for sha in ['14a32c14243ace2ad060f11c31e6a8d06be89d9b','07aca2b6cc6fdf693cab13499c71852016af861c','d44b1a0b8b0d06d901d0e1ba1a9e7eb75453715a']:
+              item=api('/git/blobs/'+sha)
+              raw=base64.b64decode(item['content'])
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+              pieces.append(raw)
+          patch=gzip.decompress(base64.b64decode(b''.join(pieces)))
+          assert hashlib.sha256(patch).hexdigest()=='4e9c182aed2bbc4d1bafc640777c3962d82bb7d1e702779c60459b08e6f50179'
+          subprocess.run(['git','checkout','--detach',parent],check=True)
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          expected={
+              'build.gradle', 'docs/hydrology-backwater-followup-0.3.8.md',
+              'scripts/fixtures/settling--20261111.json', 'scripts/fixtures/settling-1337.json',
+              'scripts/fixtures/settling-2037157180504249802.json', 'scripts/fixtures/settling-42.json',
+              'scripts/fixtures/settling-801086821803359396.json',
+              'scripts/hydrology_settling_checks.py', 'scripts/hydrology_world_audit.sh',
+              'scripts/test_hydrology_settling.py', 'scripts/validate_hydrology_release.py',
+              'src/audit/java/dev/freshgenerator/audit/HydrologySettlingAudit.java',
+              'src/audit/java/dev/freshgenerator/audit/HydrologyWorldAudit.java',
+              'src/core/java/dev/freshgenerator/core/DrainageBasin.java',
+              'src/core/java/dev/freshgenerator/core/DrainageModel.java',
+              'src/test/java/dev/freshgenerator/core/DrainageBackwaterTest.java',
+              'src/test/java/dev/freshgenerator/core/DrainageConfluenceTest.java',
+              'src/test/java/dev/freshgenerator/core/DrainageSpillIndexTest.java'}
+          subprocess.run(['git','add','-A'],check=True)
+          paths=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
+          assert set(paths)==expected, paths
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          subprocess.run(['python3','-m','unittest','discover','-s','scripts','-p','test_hydrology_settling.py'],check=True)
+          entries=[]; digests={}
+          for path in sorted(expected):
+              raw=Path(path).read_bytes(); text=raw.decode('utf-8')
+              digests[path]=hashlib.sha256(raw).hexdigest()
+              blob=api('/git/blobs',{'content':text,'encoding':'utf-8'})
+              mode=subprocess.check_output(['git','ls-files','-s',path],text=True).split()[0]
+              entries.append({'path':path,'mode':mode,'type':'blob','sha':blob['sha']})
+          base_tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+          tree=api('/git/trees',{'base_tree':base_tree,'tree':entries})
+          message='fix: match receiving lake stages and keep tributaries narrow until confluence\n\nRestore the previously local receiving-lake backwater fix, bounded spill-source index and mandatory 0/200/1000-tick native acceptance. Avoid borrowing combined receiver discharge along an incoming tributary; match the receiving stage at the expanded receiving bank. Tighten raster loops to a conservative sampled-curve bound without changing confluence geometry.\n\n308 local Java tests pass, including five new confluence regressions; four of those fail on the preceding backwater package. Exact local package tested on five native Minecraft 26.3/Fabric servers for 1000 ticks: 8523 modeled source/ice columns retained across 28 windows, no newly flooded dry land or changed ground heights. Seed 1337 no longer has the 72 water-top rises; nine single-block wet-column adjustments on two other seeds remain explicitly measured. Raster optimization matches 75 paired geometry/order scenarios. This is not a release; full run-bound CI, performance measurement and visual acceptance remain required.'
+          commit=api('/git/commits',{'message':message,'tree':tree['sha'],'parents':[parent]})
+          print('FRESHGENERATOR_PREPARED_CONFLUENCE_COMMIT',commit['sha'])
+          print('VERIFIED_FILE_SHA256',json.dumps(digests,sort_keys=True))
