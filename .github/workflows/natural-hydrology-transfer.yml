@@ -1,54 +1,59 @@
-name: Preserve checked shared water-stage fix
+name: Export exact morphology regression observations
 on:
   push:
     branches: [audit/natural-hydrology-transfer]
 permissions:
-  contents: write
+  contents: read
 jobs:
-  preserve:
+  inspect:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - name: Verify the source-only patch and advance the isolated candidate
+        with: {persist-credentials: false}
+      - name: Verify preserved native observations for the failed candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         shell: python
         run: |
-          import hashlib, json, os, subprocess
+          import base64, gzip, hashlib, json, os, urllib.request
           from pathlib import Path
-          base = '15a13eb53107f559240dc6fc4cf1b8db406fb5d7'
-          target = 'fix/natural-hydrology-morphology'
-          raw = Path('.review/natural-hydrology/stage.patch').read_bytes()
-          assert len(raw) == 6218
-          assert hashlib.sha256(raw).hexdigest() == '0d39ab6687f02ebbf5fb84158dc9cc6f61b5a039709b5dfc16640dad156e9245'
-          manifest = {
-            'src/core/java/dev/freshgenerator/core/DrainageModel.java': '9cbaa8605d8b46ef316cc7ccc983b3031cc59c9de0fbaf691c176f67133dc0d5',
-            'src/test/java/dev/freshgenerator/core/DrainageMorphologyTest.java': '9f3a43bf37906aa67cdb1d69c1df7fbfb9ed546ee4aaba53ec28923fda7fd9fd',
-            'scripts/hydrology_checks.py': '15aa8a7fac187f2a7b6c7195e0e65067480b571e661c2e5854b58fe23806b715',
-            'scripts/test_hydrology_stage_connectivity.py': 'c170dddf96f6010521b5521f52691030c743dff212799741e7545c6d238d9aaf'
+          blobs = {
+            'hydrology-1337': '102e648aed56aa7a4748c097024482819a41fc38',
+            'hydrology-801086821803359396': 'bca3ddb03b5b81c4d8ef2abe246c8419637acb69',
+            'technical-build': '1bb1fb914362829609cd2039073e69d63167a63d'
           }
-          patch = Path(os.environ['RUNNER_TEMP']) / 'water-stage-seams.patch'
-          patch.write_bytes(raw)
-          work = Path(os.environ['RUNNER_TEMP']) / 'water-stage-candidate'
-          subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
-          def git(*args):
-              return subprocess.check_output(['git', *args], cwd=work, text=True).strip()
-          assert git('rev-parse', 'HEAD') == base
-          git('apply', '--check', '--whitespace=error-all', str(patch))
-          git('apply', '--whitespace=error-all', str(patch))
-          changed = set(git('diff', '--name-only').splitlines()) | set(git('ls-files', '--others', '--exclude-standard').splitlines())
-          assert changed == set(manifest), (changed, set(manifest))
-          for name, digest in manifest.items():
-              file = work / name
-              assert not file.is_symlink() and file.is_file()
-              assert hashlib.sha256(file.read_bytes()).hexdigest() == digest, name
-          git('diff', '--check')
-          git('config', 'user.name', 'github-actions[bot]')
-          git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
-          git('add', '--', *sorted(manifest))
-          git('commit', '-m', 'fix: connect descending water stages without changing lake levels or flooding dry banks')
-          git('fetch', 'origin', 'refs/heads/' + target)
-          assert git('rev-parse', 'FETCH_HEAD') == base, 'Newer candidate exists; do not overwrite'
-          git('push', 'origin', 'HEAD:refs/heads/' + target)
-          print('PRESERVED_WATER_STAGE_FIX', git('rev-parse', 'HEAD'))
-          print(json.dumps(manifest, sort_keys=True))
+          root = Path('morphology-evidence'); root.mkdir()
+          index = []
+          for label, sha in blobs.items():
+              url = 'https://api.github.com/repos/' + os.environ['REPO'] + '/git/blobs/' + sha
+              request = urllib.request.Request(url, headers={
+                  'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                  'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  item = json.loads(response.read(20000000))
+              raw = base64.b64decode(item['content'])
+              assert hashlib.sha1(('blob ' + str(len(raw)) + '\0').encode() + raw).hexdigest() == sha
+              bundle = json.loads(gzip.decompress(raw))
+              assert bundle['identity']['GITHUB_SHA'] == '15a13eb53107f559240dc6fc4cf1b8db406fb5d7'
+              assert bundle['identity']['GITHUB_RUN_ID'] == '43419121308'
+              folder = root / label; folder.mkdir()
+              (folder / 'identity.json').write_text(json.dumps(bundle['identity'], indent=2))
+              for name, entry in bundle['files'].items():
+                  path = Path(name)
+                  assert not path.is_absolute() and '..' not in path.parts
+                  data = base64.b64decode(entry['content'])
+                  assert hashlib.sha256(data).hexdigest() == entry['sha256'], name
+                  target = folder / path; target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
+              index.append({'name': label, 'blob': sha, 'files': len(bundle['files'])})
+          (root / 'index.json').write_text(json.dumps(index, indent=2))
+          print('VERIFIED_MORPHOLOGY_REGRESSION_EVIDENCE', json.dumps(index))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morphology-regression-15a13eb
+          path: morphology-evidence/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 3
