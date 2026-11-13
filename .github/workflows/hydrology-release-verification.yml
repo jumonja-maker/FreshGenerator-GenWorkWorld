@@ -1,52 +1,65 @@
-name: Export exact main hydrology package for installation verification
+name: Verify immutable published hydrology release
 on:
   push:
     branches: [audit/hydrology-release-verification]
 permissions:
   contents: read
+  actions: read
 jobs:
   export:
     if: contains(github.event.head_commit.message, '[verify-release-package]')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Recover only the checksum-verified main build package
+      - name: Verify actual published files against the completed main run
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, urllib.request
+          import base64, hashlib, json, os, urllib.request
           from pathlib import Path
-          digest='bbc569b60d5cd19273a9349700178f7572912fba'
+          publication='c3159edb43b8432fd926fc4ac2ba659466e1418f'
           source='b075f24efe7683240bbf767334d1719c35301ba0'
-          request=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+'/git/blobs/'+digest,
-              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-          with urllib.request.urlopen(request,timeout=60) as response: blob=json.load(response)
-          raw=base64.b64decode(blob['content'])
-          assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==digest
-          bundle=json.loads(gzip.decompress(raw))
-          assert bundle['identity']['GITHUB_SHA']==source
-          assert bundle['identity']['GITHUB_RUN_ID']=='43395981685'
-          root=Path('package');root.mkdir()
-          allowed=['libs/FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar',
-                   'libs/FreshGenerator-Fabric-26.3-0.3.7-alpha.1-sources.jar',
-                   'reports/village-release/build.json',
-                   'reports/village-release/reproducible.sha256']
-          for name in allowed:
-              entry=bundle['files'][name];data=base64.b64decode(entry['content'],validate=True)
-              assert hashlib.sha256(data).hexdigest()==entry['sha256']
-              (root/Path(name).name).write_bytes(data)
-          info=json.loads((root/'build.json').read_text())
-          assert info['source_commit']==source and info['reproducible_build'] is True
-          assert info['jar_sha256']=='5881f2c572e516bc49c3cc3362b8916d422efe73614fc0fb9864ac404c9b2b70'
-          assert hashlib.sha256((root/'FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar').read_bytes()).hexdigest()==info['jar_sha256']
-          (root/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
-          print('Verified main package', info['jar_sha256'], 'Java tests', info['java_tests'])
+          def get(path):
+              request=urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+path,
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=60) as response:return json.load(response)
+          run=get('/actions/runs/43395981685')
+          assert run['head_sha']==source and run['conclusion']=='success' and run['head_branch']=='main'
+          commit=get('/git/commits/'+publication)
+          assert [p['sha'] for p in commit['parents']]==[source]
+          files=['FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar',
+                 'FreshGenerator-Fabric-26.3-0.3.7-alpha.1.jar.sha256',
+                 'FreshGenerator-Fabric-26.3-0.3.7-alpha.1-sources.jar',
+                 'FreshGenerator-Fabric-26.3-0.3.7-alpha.1-sources.jar.sha256',
+                 'validation-0.3.7-alpha.1.json']
+          root=Path('release');root.mkdir()
+          manifest={}
+          for name in files:
+              entry=get('/contents/dist/'+name+'?ref='+publication)
+              assert entry['encoding']=='base64'
+              data=base64.b64decode(entry['content'])
+              assert len(data)==entry['size']
+              assert hashlib.sha1(('blob '+str(len(data))+'\0').encode()+data).hexdigest()==entry['sha']
+              (root/name).write_bytes(data)
+              manifest[name]={'git_blob':entry['sha'],'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+          report=json.loads((root/'validation-0.3.7-alpha.1.json').read_text())
+          assert report['source_commit']==source and report['version']=='0.3.7-alpha.1'
+          for name,key in [(files[0],'jar_sha256'),(files[2],'sources_sha256')]:
+              assert manifest[name]['sha256']==report[key]
+              assert (root/(name+'.sha256')).read_text().split()==[report[key],name]
+          assert report['jar_sha256']=='5881f2c572e516bc49c3cc3362b8916d422efe73614fc0fb9864ac404c9b2b70'
+          inventory=get('/contents/dist?ref='+publication)
+          assert all(any(x['name']=='FreshGenerator-Fabric-26.3-0.3.'+str(v)+'-alpha.1.jar' for x in inventory) for v in range(1,7))
+          receipt={'publication_commit':publication,'source_commit':source,'main_run':run['html_url'],
+                   'main_conclusion':run['conclusion'],'previous_versions_retained':True,'files':manifest}
+          (root/'release-verification.json').write_text(json.dumps(receipt,indent=2))
+          print(json.dumps(receipt,indent=2))
       - uses: actions/upload-artifact@v4
         with:
-          name: FreshGenerator-main-build-b075f24
-          path: package/
+          name: FreshGenerator-published-c3159ed
+          path: release/
           retention-days: 3
-          compression-level: 0
+          compression-level: 6
           if-no-files-found: error
