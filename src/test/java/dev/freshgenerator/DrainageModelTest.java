@@ -23,7 +23,9 @@ class DrainageModelTest {
     void waterFollowsTheHighValleyAndDischargeIncludesMoreThanNineSteps() {
         var model = model(VALLEY, LAND, 0);
         assertTrue(model.discharge(4, 24) > 80, "Long upstream valley did not contribute");
-        assertEquals(MAX_FLOW, model.discharge(4, 160));
+        // At z=2560 this test DEM is already below sea level. Test the long
+        // contributing reach before its native-water terminal instead.
+        assertEquals(MAX_FLOW, model.discharge(4, 40));
         Tile tile = model.tile(0, 0);
         int last = 1000;
         for (int z = 8; z <= 120; z += 8) {

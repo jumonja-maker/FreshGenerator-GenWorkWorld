@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from village_checks import require
 
-VERSION = "0.3.7-alpha.1"
+VERSION = "0.3.8-alpha.1"
 PREVIOUS = "0.3.6-alpha.1"
 PREFIX = "FreshGenerator-Fabric-26.3-"
 JAR = PREFIX + VERSION + ".jar"
@@ -34,7 +34,7 @@ RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
     "core/DrainageModel", "core/DrainageModel$Field", "core/DrainageModel$Fields",
     "core/DrainageModel$Tile", "core/DrainageModel$Grid", "core/DrainageModel$Cell",
     "core/DrainageModel$Raster", "core/DrainageModel$Tiles", "core/DrainageModel$Tiles$Entry",
-    "core/DrainageModel$TileFactory", "core/DrainageBasin", "core/DrainageBasin$Spill",
+    "core/DrainageModel$TileFactory", "core/DrainageModel$Direction", "core/DrainageModel$Curve", "core/DrainageBasin", "core/DrainageBasin$Spill",
     "core/DrainageBasin$Visit", "hydrology/DrainageDensity", "hydrology/DrainageDensity$Sampler",
     "hydrology/DrainageDensity$OriginalHeight", "hydrology/DrainageDensity$OriginalHeight$Corner",
     "hydrology/HydrologyInitializer", "hydrology/HydrologyAccess", "hydrology/HydrologyAquifer",

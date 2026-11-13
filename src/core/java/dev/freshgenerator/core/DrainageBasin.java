@@ -12,7 +12,7 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
     static final int SEARCH = 7;
     private static final int RADIUS = 96;
     private static final int DIAMETER = 2 * RADIUS + 1;
-    private static final int MIN_AREA = 48;
+    private static final int MIN_AREA = 128;
     private static final int MAX_AREA = 4800;
     private static final int[] CARDINAL = {-DIAMETER, -1, 1, DIAMETER};
 
@@ -32,7 +32,15 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
 
     static DrainageBasin find(DrainageModel model, Cell center, int flow, Field terrain) {
         Spill spill = spill(model, center);
-        if (spill.level < center.height() + 2.0f) return null;
+        if (spill.level < center.height() + 2.0f) {
+            // A shallow minimum on the sampled 16-block mesh is not necessarily
+            // a real lake. Preserve its certified downhill connection WITHOUT
+            // painting a lake; otherwise narrow rivers become disconnected canals.
+            if (spill.path.length == 0) return null;
+            return new DrainageBasin(center, (int) Math.floor(model.riverLevel(center)),
+                    new BitSet(), spill.path, spill.saddleIndex);
+        }
+        if (flow < MIN_FLOW) return null;
         int sill = (int) Math.floor(spill.level - 0.6f);
         int minimum = Math.max(model.sea() - 1, (int) Math.floor(center.height()) + 1);
         // Runoff constrains the surface area that can balance evaporation.
