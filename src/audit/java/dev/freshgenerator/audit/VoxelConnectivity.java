@@ -4,6 +4,8 @@ import java.util.*;
 
 /** Read-only bounded six-neighbour component audit. NEVER removes game blocks.
  * Cells: bit 0 = occupied/support, bit 1 = natural terrain, bit 2 = structure volume.
+ * Optional evidence: bit 3 = ordinary ice, bit 4 = source water, bit 5 = sturdy dry floor.
+ * Fluids never connect or ground terrain components.
  * Bottom-connected components are grounded; side/top boundaries are unknown, not floating.
  */
 public final class VoxelConnectivity {
@@ -11,7 +13,42 @@ public final class VoxelConnectivity {
                             int maxX, int maxY, int maxZ, boolean skyExposed, boolean protectedStructure) { }
     public record Result(long occupiedBlocks, int groundedComponents, int boundaryUnknownComponents,
                          int enclosedComponents, List<Component> detached) { }
+    public static final int ORDINARY_ICE = 8, SOURCE_WATER = 16, STURDY_FLOOR = 32;
     private VoxelConnectivity() { }
+
+    /** An ice sheet floats on water, not on air. This is separate from the
+     * six-connected terrain scan: stone above water must still be reported.
+     * Fail closed unless every occupied cell of this exact component is ordinary
+     * ice, with an uninterrupted source-water column ending on a sturdy dry bed.
+     * Scanning a bounding box is conservative: any other occupied component
+     * inside it causes the exact occupied-count check to reject the exemption. */
+    public static boolean waterSupportedIce(byte[] cells, int width, int height, int depth, Component component) {
+        Objects.requireNonNull(cells); Objects.requireNonNull(component);
+        if (width < 1 || height < 1 || depth < 1 || (long)width*height*depth != cells.length
+                || component.blocks() < 1 || component.minX() < 0 || component.maxX() >= width
+                || component.minY() < 1 || component.maxY() >= height
+                || component.minZ() < 0 || component.maxZ() >= depth)
+            return false;
+        int plane=width*depth, count=0;
+        for(int y=component.minY();y<=component.maxY();y++)
+            for(int z=component.minZ();z<=component.maxZ();z++)
+                for(int x=component.minX();x<=component.maxX();x++) {
+                    int i=y*plane+z*width+x, flags=cells[i];
+                    if((flags&1)==0)continue;
+                    if((flags&ORDINARY_ICE)==0 || sourceWaterDepthBelow(cells,i,plane)==0)return false;
+                    count++;
+                }
+        return count==component.blocks();
+    }
+
+    /** Zero means missing, interrupted, boundary-unknown or unsupported water. */
+    public static int sourceWaterDepthBelow(byte[] cells,int index,int plane) {
+        if(plane<=0 || index<plane || index>=cells.length)return 0;
+        int at=index-plane, water=0;
+        while(at>=0 && (cells[at]&SOURCE_WATER)!=0 && (cells[at]&1)==0) {water++;at-=plane;}
+        return water>0 && at>=0 && (cells[at]&(1|STURDY_FLOOR))==(1|STURDY_FLOOR)
+                && (cells[at]&(SOURCE_WATER|ORDINARY_ICE))==0 ? water : 0;
+    }
     public static Result scan(byte[] cells, int width, int height, int depth) {
         Objects.requireNonNull(cells);
         long volume = (long) width * height * depth;

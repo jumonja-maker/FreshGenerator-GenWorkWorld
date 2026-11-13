@@ -18,4 +18,20 @@ class VoxelConnectivityTest {
     @Test void inputAndResultsCannotBeMutatedByAnalysis(){byte[] a=new byte[150];a[at(2,3,2)]=3;byte[] copy=a.clone();var r=scan(a);assertArrayEquals(copy,a);assertThrows(UnsupportedOperationException.class,()->r.detached().clear());}
     @Test void allSolidAndEmptyVolumesAreHandled(){byte[] a=new byte[150];assertEquals(0,scan(a).occupiedBlocks());Arrays.fill(a,(byte)3);assertEquals(150,scan(a).occupiedBlocks());assertEquals(1,scan(a).groundedComponents());}
     @Test void invalidVolumesAreRejected(){assertThrows(IllegalArgumentException.class,()->VoxelConnectivity.scan(new byte[10],5,6,5));assertThrows(IllegalArgumentException.class,()->VoxelConnectivity.scan(new byte[0],0,5,5));assertThrows(IllegalArgumentException.class,()->VoxelConnectivity.scan(new byte[0],100000,100000,100000));}
+
+    private static byte[] icedWater(){
+        byte[] a=new byte[150];a[at(2,0,2)]=(byte)(3|VoxelConnectivity.STURDY_FLOOR);
+        a[at(2,1,2)]=(byte)VoxelConnectivity.SOURCE_WATER;
+        a[at(2,2,2)]=(byte)VoxelConnectivity.SOURCE_WATER;
+        a[at(2,3,2)]=(byte)(3|VoxelConnectivity.ORDINARY_ICE);return a;
+    }
+    private static boolean buoyant(byte[] a){var c=scan(a).detached().getFirst();return VoxelConnectivity.waterSupportedIce(a,5,6,5,c);}
+    @Test void sourceWaterSupportsOnlyAnObservedIceSheet(){var a=icedWater();assertTrue(buoyant(a));assertEquals(2,VoxelConnectivity.sourceWaterDepthBelow(a,at(2,3,2),25));assertEquals(1,scan(a).detached().size());}
+    @Test void floatingStoneOverWaterStillFails(){var a=icedWater();a[at(2,3,2)]=3;assertFalse(buoyant(a));}
+    @Test void iceOverAirStillFails(){var a=icedWater();a[at(2,2,2)]=0;assertFalse(buoyant(a));}
+    @Test void interruptedWaterColumnStillFails(){var a=icedWater();a[at(2,1,2)]=0;assertFalse(buoyant(a));}
+    @Test void unknownOrNonSturdyBedStillFails(){var a=icedWater();a[at(2,0,2)]=16;assertFalse(buoyant(a));a[at(2,0,2)]=1;assertFalse(buoyant(a));}
+    @Test void iceMixedWithStoneStillFails(){var a=icedWater();a[at(3,3,2)]=3;assertFalse(buoyant(a));}
+    @Test void eachIceBlockNeedsItsOwnWaterSupport(){var a=icedWater();a[at(3,3,2)]=11;assertFalse(buoyant(a));a[at(3,0,2)]=35;a[at(3,1,2)]=16;a[at(3,2,2)]=16;assertTrue(buoyant(a));}
+    @Test void waterEvidenceDoesNotChangeTerrainConnectivityOrInput(){var a=icedWater();var copy=a.clone();assertTrue(buoyant(a));assertArrayEquals(copy,a);assertEquals(1,scan(a).groundedComponents());assertEquals(1,scan(a).detached().size());}
 }
