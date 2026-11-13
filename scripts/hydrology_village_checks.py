@@ -96,7 +96,7 @@ def road_columns(report):
         require(type(report[field]) is int and report[field] >= 0, 'Invalid road surface count')
     stencil = street_columns(report)
     bridges_allowed = {'minecraft:oak_planks', 'minecraft:acacia_planks', 'minecraft:spruce_planks'}
-    patches_allowed = {'minecraft:grass_block', 'minecraft:gravel'}
+    patches_allowed = {'minecraft:grass_block', 'minecraft:gravel', 'minecraft:sand'}
     states = {'minecraft:dirt_path'} | bridges_allowed | patches_allowed
     walkability = {}
     for row in report['road_walkability']:

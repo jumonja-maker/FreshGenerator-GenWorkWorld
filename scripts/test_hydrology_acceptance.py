@@ -102,8 +102,8 @@ class HydrologyAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Lost native village road columns'):
             village.validate(*reports, SHA, 42)
 
-    def test_native_grass_and_gravel_patches_need_template_identity_and_clear_headroom(self):
-        for material in ('minecraft:grass_block', 'minecraft:gravel'):
+    def test_native_disk_patches_need_template_identity_and_clear_headroom(self):
+        for material in ('minecraft:grass_block', 'minecraft:gravel', 'minecraft:sand'):
             reports = self.village_fixture()
             for run in reports[2:]:
                 row = run['villages'][2]

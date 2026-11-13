@@ -230,10 +230,10 @@ public final class VillageWorldAudit implements ModInitializer {
                             ||chunk.getBlockState(pos.below()).isSolid())
                         &&passable(pos.above())&&passable(pos.above(2));
                 // The native street_plains processor can leave a grass patch;
-                // a later native disk feature can replace that grass with gravel.
+                // a later native disk feature can replace that grass with gravel or sand.
                 // Accept neither arbitrary grass nor an entire rectangular plot:
                 // the exact native DIRT_PATH stencil and safe headroom are required.
-                boolean natural=street&&(name.equals("minecraft:grass_block")||name.equals("minecraft:gravel"))
+                boolean natural=street&&(name.equals("minecraft:grass_block")||name.equals("minecraft:gravel")||name.equals("minecraft:sand"))
                         &&b.isFaceSturdy(level,pos,Direction.UP)&&chunk.getBlockState(pos.below()).isSolid()
                         &&passable(pos.above())&&passable(pos.above(2));
                 if(path||bridge||natural){
