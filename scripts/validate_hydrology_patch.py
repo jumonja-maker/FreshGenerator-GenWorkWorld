@@ -38,7 +38,7 @@ RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
     "core/DrainageBasin$Visit", "hydrology/DrainageDensity", "hydrology/DrainageDensity$Sampler",
     "hydrology/DrainageDensity$OriginalHeight", "hydrology/DrainageDensity$OriginalHeight$Corner",
     "hydrology/HydrologyInitializer", "hydrology/HydrologyAccess", "hydrology/HydrologyAquifer",
-    "hydrology/HydrologyBiomes", *("mixin/" + name for name in MIXINS)
+    "hydrology/HydrologyBiomes", "hydrology/VillageTreeGuard", *("mixin/" + name for name in MIXINS)
 )}
 NEW_DIRECTORIES = {DENSITY + "hydrology/", "dev/freshgenerator/hydrology/"}
 ENTRYPOINT = "dev.freshgenerator.hydrology.HydrologyInitializer"

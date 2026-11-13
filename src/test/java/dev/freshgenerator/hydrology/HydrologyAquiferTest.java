@@ -25,10 +25,9 @@ class HydrologyAquiferTest {
         if (y < SEA - 23) return false;
         int own = source.applyAsInt(x, z);
         if (own != DrainageModel.DRY && y >= DrainageModel.floor(own) - 4 && y <= DrainageModel.waterTop(own) + 1) return true;
-        int[] profiles = {source.applyAsInt(x - 1, z),
-                source.applyAsInt(x + 1, z), source.applyAsInt(x, z - 1), source.applyAsInt(x, z + 1)};
+        int[] profiles = {source.applyAsInt(x - 1, z), source.applyAsInt(x + 1, z), source.applyAsInt(x, z - 1), source.applyAsInt(x, z + 1)};
         for (int p : profiles) {
-            if (p != DrainageModel.DRY && DrainageModel.waterTop(p) >= SEA && y > DrainageModel.floor(p) && y <= DrainageModel.waterTop(p)) return true;
+            if (p != DrainageModel.DRY && y > DrainageModel.floor(p) && y <= DrainageModel.waterTop(p)) return true;
         }
         return false;
     }
@@ -63,10 +62,22 @@ class HydrologyAquiferTest {
     @Test
     void aSeaLevelChannelDoesNotFillAnUnmodifiedUnderwaterPassageWithSoil() {
         var aquifer = new HydrologyAquifer(NATIVE,
-                (x, z) -> x == 1 && z == 0 ? profile(55, 62) : DrainageModel.DRY, SEA);
+                (x, z) -> x == 1 && z == 0 ? profile(55, 62) : DrainageModel.DRY, (x, z) -> 0, SEA);
         for (int y = 48; y <= 64; y++) assertFalse(aquifer.protects(0, y, 0));
         assertTrue(aquifer.protects(1, 53, 0), "The channel's own bed remains sealed");
         assertTrue(aquifer.protects(1, 60, 0));
+    }
+
+    @Test
+    void aModeledLowLakeApronKeepsItsWaterlineClosedWithoutBlockingTheCaveBelow() {
+        var aquifer = new HydrologyAquifer(NATIVE,
+                (x,z) -> x == 1 && z == 0 ? profile(60,62) : DrainageModel.DRY,
+                (x,z) -> x == 0 && z == 0 ? 1 : 0, SEA);
+        assertFalse(aquifer.protects(0,60,0));
+        assertTrue(aquifer.protects(0,61,0));
+        assertTrue(aquifer.protects(0,62,0));
+        assertFalse(aquifer.protects(0,63,0));
+        assertFalse(aquifer.protects(2,61,0), "Unaltered native water passage must remain open");
     }
 
     @Test

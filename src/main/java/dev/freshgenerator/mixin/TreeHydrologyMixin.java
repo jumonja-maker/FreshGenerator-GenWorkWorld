@@ -3,6 +3,7 @@ package dev.freshgenerator.mixin;
 import dev.freshgenerator.core.DrainageModel;
 import dev.freshgenerator.hydrology.DrainageDensity;
 import dev.freshgenerator.hydrology.HydrologyAccess;
+import dev.freshgenerator.hydrology.VillageTreeGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.util.RandomSource;
@@ -24,6 +25,10 @@ abstract class TreeHydrologyMixin {
                                             BlockPos origin, CallbackInfoReturnable<Boolean> callback) {
         var drainage = freshgenerator$drainage(level);
         if (drainage == null || origin.getY() < drainage.seaLevel() - 16) return;
+        if (!VillageTreeGuard.permit(level, origin, drainage)) {
+            callback.setReturnValue(false);
+            return;
+        }
 
         // Wide native trunks can set their ground in the 2 x 2 area from the origin.
         for (int dz = 0; dz <= 1; dz++) {
