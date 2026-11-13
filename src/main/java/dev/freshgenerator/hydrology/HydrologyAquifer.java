@@ -18,7 +18,7 @@ public final class HydrologyAquifer implements Aquifer {
     private int lastX, lastZ;
     private boolean hasColumn;
     private int column;
-    private boolean surfaceWater;
+    private boolean surfaceOverride;
     // Like the native aquifer, this instance is confined to its NoiseChunk task.
     // Keep protection lookups separate: carving and fluid fill may be interleaved.
     private int sealX, sealZ;
@@ -48,7 +48,7 @@ public final class HydrologyAquifer implements Aquifer {
 
     @Override
     public BlockState computeSubstance(int x, int y, int z, double density) {
-        surfaceWater = false;
+        surfaceOverride = false;
         if (density <= 0 && y >= seaLevel - 18) {
             if (!hasColumn || x != lastX || z != lastZ) {
                 column = water.applyAsInt(x, z);
@@ -56,8 +56,17 @@ public final class HydrologyAquifer implements Aquifer {
                 lastZ = z;
                 hasColumn = true;
             }
+            // The 3-D alpine relief may shave the very last voxel of the
+            // height-field bed. Its negative density must not leave an air gap
+            // immediately below a source column. Null selects the generator's
+            // default solid block; native material rules still finish its surface.
+            // Only the exact modeled floor is sealed, never the deep cave below.
+            if (column != DrainageModel.DRY && y == DrainageModel.floor(column)) {
+                surfaceOverride = true;
+                return null;
+            }
             if (column != DrainageModel.DRY && y <= DrainageModel.waterTop(column) && y > DrainageModel.floor(column)) {
-                surfaceWater = true;
+                surfaceOverride = true;
                 return Blocks.WATER.defaultBlockState();
             }
         }
@@ -66,7 +75,7 @@ public final class HydrologyAquifer implements Aquifer {
 
     @Override
     public boolean shouldScheduleFluidUpdate() {
-        return !surfaceWater && nativeAquifer.shouldScheduleFluidUpdate();
+        return !surfaceOverride && nativeAquifer.shouldScheduleFluidUpdate();
     }
 
     public boolean protects(int x, int y, int z) {
