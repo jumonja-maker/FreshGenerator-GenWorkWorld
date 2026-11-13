@@ -51,27 +51,47 @@ class HydrologyCoreRegression(unittest.TestCase):
                 cls.results[mode] = rows
         report = {'scope': 'Java core on synthetic terrain; no Minecraft/Fabric runtime',
                   'reference_commit': cls.fixture['reference_commit'],
+                  'baseline_note': 'Pre-0.3.8 geometry is preserved as a historical cost baseline, not an exact-shape contract',
                   'java': (version.stderr or version.stdout).strip(), 'observations': cls.results}
         destination = ROOT / 'build/reports/village-release/hydrology-core-observations.json'
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
     def compare_mode(self, mode):
+        forward = {(r['seed'], r['shape']): r for r in self.results['forward']}
         for actual in self.results[mode]:
             with self.subTest(mode=mode, seed=actual['seed'], terrain=actual['shape']):
-                expected = self.expected[actual['seed'], actual['shape']]
+                canonical = forward[actual['seed'], actual['shape']]
                 self.assertEqual(actual['order'], mode)
                 for field in ('tiles', 'columns', 'sha256'):
-                    self.assertEqual(actual[field], expected[field], field)
+                    self.assertEqual(actual[field], canonical[field], field)
 
-    def test_forward_matches_pre_optimization_geometry(self):
+    def test_forward_is_complete_and_finite(self):
         self.compare_mode('forward')
+        for actual in self.results['forward']:
+            self.assertEqual(12, actual['tiles'])
+            self.assertEqual(12 * 129 * 129, actual['columns'])
+            self.assertEqual(64, len(actual['sha256']))
 
-    def test_reverse_matches_pre_optimization_geometry(self):
+    def test_reverse_matches_new_visual_geometry(self):
         self.compare_mode('reverse')
 
-    def test_parallel_matches_pre_optimization_geometry(self):
+    def test_parallel_matches_new_visual_geometry(self):
         self.compare_mode('parallel')
+
+    def test_new_river_shapes_intentionally_differ_from_published_fixture(self):
+        # The historical fixture remains a fixed work/comparison baseline,
+        # but it must NOT lock in the over-dense 0.3.7 geometry.
+        changed = set()
+        for row in self.results['forward']:
+            previous = self.expected[row['seed'], row['shape']]
+            if row['sha256'] != previous['sha256']:
+                changed.add(row['shape'])
+            if row['shape'] == 'flat':
+                self.assertEqual(previous['sha256'], row['sha256'],
+                                 'A flat landscape must not acquire artificial rivers')
+        self.assertTrue({'valley', 'rugged'} & changed,
+                        'The visual-naturalism patch changed no flowing landscape')
 
     def test_collision_heavy_terrain_does_not_repeat_the_old_sampler_work(self):
         old = [r for r in self.expected.values() if r['shape'] == 'rugged']
