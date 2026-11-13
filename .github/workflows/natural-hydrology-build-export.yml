@@ -1,0 +1,57 @@
+name: Export exact built morphology candidate
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/natural-hydrology-build-export.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read and verify successful build evidence only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,gzip,hashlib,json,os,re,urllib.request,urllib.parse
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld';source='62e1039c77b8a2212830c80469e5121eeca7f233';run=43444080163;job=131948856472
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          class Redirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  result=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if result and urllib.parse.urlsplit(req.full_url).netloc!=urllib.parse.urlsplit(newurl).netloc:result.remove_header('Authorization')
+                  return result
+          opener=urllib.request.build_opener(Redirect())
+          def get(path,binary=False):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with opener.open(req,timeout=90) as res:data=res.read(8000000)
+              return data if binary else json.loads(data)
+          metadata=get('/actions/jobs/'+str(job))
+          assert metadata['run_id']==run and metadata['head_sha']==source and metadata['conclusion']=='success'
+          log=get('/actions/jobs/'+str(job)+'/logs',True).decode('utf-8-sig')
+          stored=json.loads(re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})',log)[-1]);blob=get('/git/blobs/'+stored['blob'])
+          raw=base64.b64decode(blob['content']);assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==stored['blob']
+          bundle=json.loads(gzip.decompress(raw));identity=bundle['identity']
+          assert identity['GITHUB_SHA']==source and identity['GITHUB_RUN_ID']==str(run) and identity['GITHUB_REPOSITORY']==repo
+          root=Path('built-candidate');root.mkdir()
+          for name,entry in bundle['files'].items():
+              p=Path(name);assert not p.is_absolute() and '..' not in p.parts
+              data=base64.b64decode(entry['content']);assert hashlib.sha256(data).hexdigest()==entry['sha256']
+              dest=root/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+          (root/'identity.json').write_text(json.dumps(identity,indent=2))
+          (root/'build.log').write_text(log)
+          (root/'scope.txt').write_text('Successful reproducible build only. Not proof of full native CI success, not a main release.\n')
+          report=json.loads((root/'reports/village-release/build.json').read_text())
+          jar=root/'libs/FreshGenerator-Fabric-26.3-0.3.8-alpha.1.jar'
+          assert hashlib.sha256(jar.read_bytes()).hexdigest()==report['jar_sha256']
+          print('EXACT_CANDIDATE_JAR',report['jar_sha256'])
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morphology-built-candidate-62e1039
+          path: built-candidate/
+          if-no-files-found: error
+          retention-days: 7
