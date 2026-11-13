@@ -54,14 +54,16 @@ class HydrologyAcceptanceTests(unittest.TestCase):
         a, b, c = historical.VillageEvidenceTests().fixtures()
         old = copy.deepcopy(b); old.update(phase='published', source_commit=PUBLISHED)
         for report in (a, old, b, c):
-            report['hydrology_observer_schema'] = 3
+            report['hydrology_observer_schema'] = 4
             for terrain in report['terrain']: terrain.update(snapshot())
             for row in report['villages']:
                 block = 'Block{minecraft:stone}'
                 row.update(full_palette=[block], full_columns=[[0, 0, 384, 0]],
                            full_sha256=hashlib.sha256(((block + '\n') * 384).encode()).hexdigest(),
-                           bridge_blocks=0, road_surface=[[i, 70, 0, 'minecraft:dirt_path']
-                                                          for i in range(row['path_blocks'])])
+                           bridge_blocks=0, natural_road_blocks=0, road_walkability=[],
+                           street_path_columns=[[i, 0] for i in range(row['path_blocks'])],
+                           street_path_sha256=hashlib.sha256(''.join(f'{i},0\n' for i in range(row['path_blocks'])).encode()).hexdigest(),
+                           road_surface=[[i, 70, 0, 'minecraft:dirt_path'] for i in range(row['path_blocks'])])
         return [a, old, b, c]
 
     def test_complete_safe_village_is_accepted(self):
@@ -90,11 +92,59 @@ class HydrologyAcceptanceTests(unittest.TestCase):
             row['road_surface'][0][3] = 'minecraft:oak_planks'
             row['path_blocks'] -= 1
             row['bridge_blocks'] += 1
+            row['road_walkability'] = [[0, 70, 0, True, True, True, True]]
         self.assertEqual(3, village.validate(*reports, SHA, 42)['villages'])
         for run in reports[2:]:
-            run['villages'][2]['road_surface'][0][0] = -100
+            row = run['villages'][2]
+            row['road_surface'] = row['road_surface'][1:]
+            row['bridge_blocks'] = 0
+            row['road_walkability'] = []
         with self.assertRaisesRegex(ValueError, 'Lost native village road columns'):
             village.validate(*reports, SHA, 42)
+
+    def test_native_grass_and_gravel_patches_need_template_identity_and_clear_headroom(self):
+        for material in ('minecraft:grass_block', 'minecraft:gravel'):
+            reports = self.village_fixture()
+            for run in reports[2:]:
+                row = run['villages'][2]
+                row['road_surface'][0][3] = material
+                row['path_blocks'] -= 1
+                row['natural_road_blocks'] = 1
+                row['road_walkability'] = [[0, 70, 0, True, True, True, True]]
+            self.assertEqual(3, village.validate(*reports, SHA, 42)['villages'])
+            for run in reports[2:]: run['villages'][2]['road_walkability'][0][4] = False
+            with self.assertRaisesRegex(ValueError, 'Unsafe'):
+                village.validate(*reports, SHA, 42)
+
+    def test_roof_planks_and_grass_outside_the_exact_template_are_not_roads(self):
+        for material, field in (('minecraft:oak_planks', 'bridge_blocks'),
+                                ('minecraft:grass_block', 'natural_road_blocks')):
+            row = self.village_fixture()[2]['villages'][0]
+            row['road_surface'].append([-8587, 67, 7645, material])
+            row[field] += 1
+            row['road_walkability'].append([-8587, 67, 7645, True, True, True, True])
+            with self.assertRaisesRegex(ValueError, 'outside the native DIRT_PATH stencil'):
+                village.road_columns(row)
+
+    def test_native_template_stencil_cannot_be_moved_to_excuse_a_missing_street(self):
+        reports = self.village_fixture()
+        for run in reports[2:]:
+            row = run['villages'][2]
+            row['street_path_columns'][0] = [-1, 0]
+            row['street_path_sha256'] = hashlib.sha256(''.join(f'{x},{z}\n' for x,z in row['street_path_columns']).encode()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'Native street stencil changed'):
+            village.validate(*reports, SHA, 42)
+
+    def test_processed_road_requires_complete_and_nonduplicated_walkability_evidence(self):
+        row = self.village_fixture()[2]['villages'][2]
+        row['road_surface'][0][3] = 'minecraft:gravel'
+        row['path_blocks'] -= 1
+        row['natural_road_blocks'] = 1
+        with self.assertRaisesRegex(ValueError, 'Missing processed road walkability'):
+            village.road_columns(row)
+        row['road_walkability'] = [[0, 70, 0, True, True, True, True]] * 2
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            village.road_columns(row)
 
     def normal_fixture(self):
         window = {'site': {'kind': 'control', 'x': 0, 'z': 0}, 'surfaceBiomes': {'minecraft:plains': 4},

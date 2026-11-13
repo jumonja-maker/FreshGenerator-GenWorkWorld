@@ -80,17 +80,46 @@ def check_reload(before, after):
             {k: v for k, v in after.items() if k not in metadata}, 'FULL village measurements changed on reload')
 
 
+def street_columns(report):
+    rows = report['street_path_columns']
+    require(isinstance(rows, list) and all(isinstance(row, list) and len(row) == 2
+            and all(type(v) is int for v in row) for row in rows), 'Invalid native street stencil')
+    coordinates = [tuple(row) for row in rows]
+    require(coordinates == sorted(set(coordinates)), 'Noncanonical native street stencil')
+    digest = hashlib.sha256(''.join(f'{x},{z}\n' for x, z in coordinates).encode()).hexdigest()
+    require(digest == report['street_path_sha256'], 'Native street stencil/hash mismatch')
+    return set(coordinates)
+
+
 def road_columns(report):
-    require(type(report['bridge_blocks']) is int and report['bridge_blocks'] >= 0, 'Invalid bridge count')
-    result, paths, bridges = set(), 0, 0
-    states = {'minecraft:dirt_path', 'minecraft:oak_planks', 'minecraft:acacia_planks', 'minecraft:spruce_planks'}
+    for field in ('bridge_blocks', 'natural_road_blocks'):
+        require(type(report[field]) is int and report[field] >= 0, 'Invalid road surface count')
+    stencil = street_columns(report)
+    bridges_allowed = {'minecraft:oak_planks', 'minecraft:acacia_planks', 'minecraft:spruce_planks'}
+    patches_allowed = {'minecraft:grass_block', 'minecraft:gravel'}
+    states = {'minecraft:dirt_path'} | bridges_allowed | patches_allowed
+    walkability = {}
+    for row in report['road_walkability']:
+        require(isinstance(row, list) and len(row) == 7 and all(type(v) is int for v in row[:3])
+                and all(type(v) is bool and v for v in row[3:]), 'Unsafe or unobserved processed road')
+        key = tuple(row[:3])
+        require(key not in walkability, 'Duplicate processed road evidence')
+        walkability[key] = row[3:]
+    result, paths, bridges, patches, alternatives = set(), 0, 0, 0, set()
     for x, y, z, block in report['road_surface']:
         require(all(type(v) is int for v in (x, y, z)) and block in states, 'Invalid village road block')
         require((x, z) not in result, 'Overlapping village road surface')
         result.add((x, z))
         paths += block == 'minecraft:dirt_path'
-        bridges += block != 'minecraft:dirt_path'
-    require(paths <= report['path_blocks'] and bridges == report['bridge_blocks'], 'Road inventory/count mismatch')
+        bridges += block in bridges_allowed
+        patches += block in patches_allowed
+        if block != 'minecraft:dirt_path':
+            require((x, z) in stencil, 'Processed road is outside the native DIRT_PATH stencil')
+            require((x, y, z) in walkability, 'Missing processed road walkability')
+            alternatives.add((x, y, z))
+    require(alternatives == walkability.keys(), 'Extraneous processed road evidence')
+    require(paths <= report['path_blocks'] and bridges == report['bridge_blocks']
+            and patches == report['natural_road_blocks'], 'Road inventory/count mismatch')
     return result
 
 
@@ -128,7 +157,7 @@ def validate(baseline, published, candidate, reload, sha, seed):
                                 (candidate, 'candidate', sha), (reload, 'reload', sha)):
         require(data['completed'] is True and data['seed'] == seed and data['phase'] == phase
                 and data['source_commit'] == source, 'Wrong/incomplete village evidence')
-        require(data['hydrology_observer_schema'] == 3, 'Missing hydrology-aware raw evidence')
+        require(data['hydrology_observer_schema'] == 4, 'Missing hydrology-aware raw evidence')
         require(data['settings'] == 'freshgenerator:highlands_v2', 'Wrong village world')
         require(type(data['explicit_full_chunks']) is int and data['explicit_full_chunks'] > 0, 'No FULL village chunks')
         require(len(data['villages']) == len(data['terrain']) >= 3, 'Missing village coverage')
@@ -157,6 +186,7 @@ def validate(baseline, published, candidate, reload, sha, seed):
         counts(old, FULL_COUNTS); counts(new, FULL_COUNTS)
         fingerprint(old['full_sha256']); fingerprint(new['full_sha256'])
         require(new['doors'] == old['doors'] > 0, 'Lost village doors')
+        require(street_columns(old) == street_columns(new), 'Native street stencil changed')
         old_roads, new_roads = road_columns(old), road_columns(new)
         missing_roads = old_roads - new_roads
         require(not missing_roads, f'Lost native village road columns: {sorted(missing_roads)[:16]}')
@@ -177,7 +207,7 @@ def validate(baseline, published, candidate, reload, sha, seed):
 
 
 def summarize_full(report):
-    return {k: v for k, v in report.items() if k not in {'full_palette', 'full_columns', 'road_surface'}}
+    return {k: v for k, v in report.items() if k not in {'full_palette', 'full_columns', 'road_surface', 'road_walkability', 'street_path_columns'}}
 
 
 def compare(folder, sha, seed):

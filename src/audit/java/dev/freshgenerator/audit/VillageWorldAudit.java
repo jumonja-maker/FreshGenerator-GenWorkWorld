@@ -20,6 +20,7 @@ import net.minecraft.world.level.levelgen.densityfunction.*;
 import net.minecraft.world.level.levelgen.structure.*;
 import net.minecraft.world.level.levelgen.structure.pools.SinglePoolElement;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -64,7 +65,7 @@ public final class VillageWorldAudit implements ModInitializer {
             drainage=state.getClass().getMethod("freshgenerator$drainage").invoke(state);
             if(drainage!=null)waterAt=drainage.getClass().getMethod("waterAt",int.class,int.class);
         } catch(NoSuchMethodException absent) { drainage=null; }
-        report.addProperty("hydrology_observer_schema",3);
+        report.addProperty("hydrology_observer_schema",4);
         report.addProperty("source_commit",System.getenv("FG_VILLAGE_SOURCE"));report.addProperty("phase",System.getenv("FG_VILLAGE_PHASE"));
         report.addProperty("seed",level.getSeed());report.addProperty("settings",settings);
         Path locationsFile=Path.of(System.getenv("FG_VILLAGE_LOCATIONS"));List<Location> locations;
@@ -176,15 +177,30 @@ public final class VillageWorldAudit implements ModInitializer {
     }
     private JsonObject scanFull(Study s)throws Exception {
         JsonObject r=identity(s);var blocks=MessageDigest.getInstance("SHA-256");
-        int pathBlocks=0,bridgeBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;
+        int pathBlocks=0,bridgeBlocks=0,naturalRoadBlocks=0,pathVoids=0,farmland=0,farmVoids=0,doors=0,blockedDoors=0;
         int protectedPathVoids=0,protectedFarmVoids=0,protectedLava=0;Set<Long> seenDoors=new HashSet<>();
-        JsonArray gaps=new JsonArray(),roadSurface=new JsonArray();
-        List<BoundingBox> streets=new ArrayList<>();
+        JsonArray gaps=new JsonArray(),roadSurface=new JsonArray(),roadWalkability=new JsonArray();
+        // A street's bounding box includes air, grass borders and occasionally a
+        // neighboring house roof. Only DIRT_PATH blocks in the original native
+        // template establish the identity of a processed crossing or grass patch.
+        Set<Long> streetColumns=new HashSet<>();var sourceColumns=new ArrayList<BlockPos>();
         for(var piece:s.start.getPieces())if(piece instanceof PoolElementStructurePiece pool
                 &&pool.getElement() instanceof SinglePoolElement street
                 &&street.getProjection()==StructureTemplatePool.Projection.TERRAIN_MATCHING
                 &&street.getTemplateLocation().getPath().startsWith("village/")
-                &&street.getTemplateLocation().getPath().contains("/streets/"))streets.add(pool.getBoundingBox());
+                &&street.getTemplateLocation().getPath().contains("/streets/")){
+            var template=level.getStructureTemplateManager().get(street.getTemplateLocation()).orElseThrow();
+            var placement=new StructurePlaceSettings().setRotation(pool.getRotation());
+            for(var block:template.filterBlocks(pool.getPosition(),placement,Blocks.DIRT_PATH)){
+                var p=block.pos();long key=columnKey(p.getX(),p.getZ());
+                if(streetColumns.add(key))sourceColumns.add(new BlockPos(p.getX(),0,p.getZ()));
+            }
+        }
+        sourceColumns.sort(Comparator.<BlockPos>comparingInt(p->p.getX()).thenComparingInt(p->p.getZ()));
+        var pathSources=new JsonArray();var sourceHash=MessageDigest.getInstance("SHA-256");
+        for(var p:sourceColumns){var xy=new JsonArray();xy.add(p.getX());xy.add(p.getZ());pathSources.add(xy);
+            hash(sourceHash,p.getX()+","+p.getZ()+"\n");}
+        r.add("street_path_columns",pathSources);r.addProperty("street_path_sha256",hash(sourceHash));
         var fullPalette=new LinkedHashMap<String,Integer>();var fullColumns=new JsonArray();
         var encoded=new IdentityHashMap<BlockState,byte[]>();var pos=new BlockPos.MutableBlockPos();
         for(int x=s.box.minX()-8;x<=s.box.maxX()+8;x+=4)for(int z=s.box.minZ()-8;z<=s.box.maxZ()+8;z+=4){
@@ -203,8 +219,7 @@ public final class VillageWorldAudit implements ModInitializer {
         for(int x=s.box.minX();x<=s.box.maxX();x++)for(int z=s.box.minZ();z<=s.box.maxZ();z++){
             var chunk=fullChunk(x,z);
             double h=height(x,z);var column=s.model.column(x,z,h,generator.getSeaLevel());double expected=column.height();
-            boolean street=false;
-            for(var box:streets)if(x>=box.minX()&&x<=box.maxX()&&z>=box.minZ()&&z<=box.maxZ()){street=true;break;}
+            boolean street=streetColumns.contains(columnKey(x,z));
             int roadY=Integer.MIN_VALUE;String roadBlock="";
             for(int y=Math.max(-60,(int)expected-24);y<=Math.min(318,(int)expected+32);y++){
                 pos.set(x,y,z);var b=chunk.getBlockState(pos);String name=id(b);
@@ -214,10 +229,14 @@ public final class VillageWorldAudit implements ModInitializer {
                             ||chunk.getBlockState(pos.below()).is(Blocks.ICE)
                             ||chunk.getBlockState(pos.below()).isSolid())
                         &&passable(pos.above())&&passable(pos.above(2));
-                // Native street processors can retain a deck after the bank
-                // below it becomes solid. Exact street coordinates and walkable
-                // headroom, not the fluid underneath, identify that crossing.
-                if(path||bridge){
+                // The native street_plains processor can leave a grass patch;
+                // a later native disk feature can replace that grass with gravel.
+                // Accept neither arbitrary grass nor an entire rectangular plot:
+                // the exact native DIRT_PATH stencil and safe headroom are required.
+                boolean natural=street&&(name.equals("minecraft:grass_block")||name.equals("minecraft:gravel"))
+                        &&b.isFaceSturdy(level,pos,Direction.UP)&&chunk.getBlockState(pos.below()).isSolid()
+                        &&passable(pos.above())&&passable(pos.above(2));
+                if(path||bridge||natural){
                     if(path)pathBlocks++;
                     roadY=y;roadBlock=name;
                 }
@@ -245,12 +264,23 @@ public final class VillageWorldAudit implements ModInitializer {
                 }
             }
             if(roadY!=Integer.MIN_VALUE){
-                if(!roadBlock.equals("minecraft:dirt_path"))bridgeBlocks++;
+                if(isStreetBridge(s.location.id,roadBlock))bridgeBlocks++;
+                else if(!roadBlock.equals("minecraft:dirt_path"))naturalRoadBlocks++;
                 var road=new JsonArray();road.add(x);road.add(roadY);road.add(z);road.add(roadBlock);roadSurface.add(road);
+                if(!roadBlock.equals("minecraft:dirt_path")){
+                    var p=new BlockPos(x,roadY,z);var below=chunk.getBlockState(p.below());var evidence=new JsonArray();
+                    evidence.add(x);evidence.add(roadY);evidence.add(z);
+                    evidence.add(chunk.getBlockState(p).isFaceSturdy(level,p,Direction.UP));
+                    evidence.add(passable(p.above()));evidence.add(passable(p.above(2)));
+                    evidence.add(below.isSolid()||(isStreetBridge(s.location.id,roadBlock)
+                            &&(below.getFluidState().is(FluidTags.WATER)||below.is(Blocks.ICE))));
+                    roadWalkability.add(evidence);
+                }
             }
         }
         r.addProperty("full_sha256",hash(blocks));r.addProperty("path_blocks",pathBlocks);r.addProperty("path_columns_with_void_within_8",pathVoids);
-        r.addProperty("bridge_blocks",bridgeBlocks);r.add("road_surface",roadSurface);
+        r.addProperty("bridge_blocks",bridgeBlocks);r.addProperty("natural_road_blocks",naturalRoadBlocks);
+        r.add("road_surface",roadSurface);r.add("road_walkability",roadWalkability);
         r.add("full_palette",G.toJsonTree(fullPalette.keySet()));r.add("full_columns",fullColumns);
         r.addProperty("farmland_blocks",farmland);r.addProperty("farmland_columns_with_void_within_8",farmVoids);
         r.addProperty("protected_path_air_or_lava_columns",protectedPathVoids);r.addProperty("protected_farm_air_or_lava_columns",protectedFarmVoids);
@@ -261,6 +291,7 @@ public final class VillageWorldAudit implements ModInitializer {
         int cx=Math.floorDiv(x,16),cz=Math.floorDiv(z,16);
         return observedFullChunks.computeIfAbsent(((long)cx<<32)|(cz&0xffffffffL),key->level.getChunk(cx,cz));
     }
+    private static long columnKey(int x,int z){return ((long)x<<32)|(z&0xffffffffL);}
     private static boolean isStreetBridge(String village,String block){
         return switch(village){
             case "minecraft:village_plains" -> block.equals("minecraft:oak_planks");
