@@ -1,0 +1,85 @@
+name: Prepare stricter native water-stage acceptance
+on:
+  push:
+    branches: [audit/natural-hydrology-transfer]
+    paths: [.github/workflows/hydrology-stage-gate-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Prepare exact reviewed acceptance change without moving refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          repo='jumonja-maker/FreshGenerator-GenWorkWorld'
+          parent='80bac63ab898cd3a58022dfcb7b36e2f25a545d6'
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          def api(path,data=None):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+path,
+                  data=None if data is None else json.dumps(data).encode(),
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+                  method='GET' if data is None else 'POST')
+              with urllib.request.urlopen(req,timeout=60) as response: return json.load(response)
+          sha='09ff8b2675ceeebd9b147d323eab84c26566fdb9'
+          raw=base64.b64decode(api('/git/blobs/'+sha)['content'])
+          assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+          patch=raw.replace(b'\n diff --git',b'\ndiff --git')
+          assert hashlib.sha256(patch).hexdigest()=='94636ce2f56d336be43d3c9b930b159c1d4a01fa1440f5254e7b3c598a692be6'
+          subprocess.run(['git','checkout','--detach',parent],check=True)
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          doc='''# 0.3.8: слияния рек и контроль водных ступеней
+
+          Продолжение PR №6. Игровые изменения: `80bac63ab898cd3a58022dfcb7b36e2f25a545d6`. Это кандидат, не опубликованный выпуск main. Предыдущий документ `hydrology-backwater-followup-0.3.8.md` сохраняет исторические результаты старого локального пакета.
+
+          ## Причина и исправление
+
+          Малая входящая река интерполировала свой расход в суммарный расход принимающего узла ещё до слияния. Например, на сиде 1337 поток с Q68 расширялся как принимающая река Q1024, а верхняя часть потока пересекалась с широкой нижней водой возле озера Y68. Теперь входящая связь сохраняет собственные ширину и глубину; общий расход применяется на исходящей связи. Уровень согласуется с расширенным берегом принимающего русла, а не только с центром расчётного узла. Равные по ширине связи не получают лишнюю горизонтальную ступень на каждом узле. Физика и игровые тики не отключены.
+
+          ## Проверенные локальные байты
+
+          SHA-256 локального JAR: `6265cabcfeda3025a26075c7ed114f1c5158bc4ba896404acea6ec43988052c6`. Это javac-пакет против настоящих API, а не воспроизводимая сборка Gradle. 308 Java-тестов прошли; четыре из пяти новых тестов слияния отклоняют предыдущую модель. Пять настоящих серверов Minecraft 26.3 / Fabric 0.20.1 / Java 25 завершили 1000 тиков.
+
+          | Сид | Запланированные источники/лёд | Изменения верхней воды до 200 тиков |
+          |---|---:|---:|
+          | 42 | 1517 | 0 |
+          | 1337 | 2244 | 0 |
+          | -20261111 | 985 | 8, по одному блоку |
+          | 2037157180504249802 | 2212 | 1, один блок |
+          | 801086821803359396 | 1565 | 0 |
+
+          Все 8523 рассчитанные водные колонки в 28 окнах сохранились. Нового затопления сухих колонок, изменений высоты грунта, неподдержанного дна или лавы возле него не найдено. Между 200 и 1000 тиками вода больше не менялась. На сиде 1337 прежние 72 подъёма до четырёх блоков исчезли. Девять одноблочных переходов на двух других сидах не объявляются точным совпадением со статическим профилем.
+
+          ## Более строгая приёмка
+
+          Помимо отсутствия нового затопления и сохранности источников, отклоняется изменение верхнего уровня более чем на один блок в уже мокрой колонке. Одноблочный переход допускается только внутри прежнего водного следа, явно записывается и должен стабилизироваться к 200 тикам. Это критерий данной конечной выборки, не физический закон. Отрицательные тесты не позволяют скрыть многоблочный подпор существующим источником ниже него.
+
+          ## Оптимизация и ограничения
+
+          Растеризация обходит ограничивающий прямоугольник фактической кривой с консервативным запасом береговой ширины, а не большой прямоугольник вокруг исходных узлов. Постоянные ширина и глубина вынесены из цикла колонок. В 75 парных сценариях ядра совпали водные профили и поправки рельефа до/после одной этой оптимизации. Это не сравнение новой геометрии со старым генератором. Сама оптимизация не является доказательством ускорения Minecraft.
+
+          Перед выпуском нужны свежая полная CI-матрица, проверка итогового JAR, измерения производительности и клиентский визуальный обзор. Точные места пользовательских скриншотов без сида/координат не воспроизведены. Не объединять в main только по локальным результатам.
+          '''
+          # Remove the uniform workflow indentation, not any content indentation.
+          import textwrap
+          Path('docs/hydrology-confluence-followup-0.3.8.md').write_text(textwrap.dedent(doc))
+          paths=['scripts/hydrology_settling_checks.py','scripts/test_hydrology_settling.py','docs/hydrology-confluence-followup-0.3.8.md']
+          subprocess.run(['git','add',*paths],check=True)
+          assert set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())==set(paths)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          subprocess.run(['python3','-m','unittest','discover','-s','scripts','-p','test_hydrology_settling.py'],check=True)
+          entries=[]
+          for path in paths:
+              blob=api('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=api('/git/trees',{'base_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'tree':entries})
+          commit=api('/git/commits',{'message':'test: reject multi-block water-stage drift inside existing channels\n\nStrengthen the native settling gate to reject multi-block rise or drop even without new flooded land. Retain explicit one-block transition records, strict dry-land/source/ground/support requirements and stabilization by tick 200. Add two adversarial tests and record the measured confluence fix, exact local package and remaining limitations. No production geometry changes in this commit.', 'tree':tree['sha'],'parents':[parent]})
+          print('FRESHGENERATOR_PREPARED_STAGE_GATE_COMMIT',commit['sha'])
