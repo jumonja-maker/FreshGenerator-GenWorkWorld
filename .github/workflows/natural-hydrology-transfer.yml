@@ -1,59 +1,76 @@
-name: Export exact morphology regression observations
+name: Export morphology source and native regression evidence
 on:
   push:
     branches: [audit/natural-hydrology-transfer]
 permissions:
   contents: read
+  actions: read
 jobs:
   inspect:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Verify preserved native observations for the failed candidate
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Archive immutable sources and verified native observations
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         shell: python
         run: |
-          import base64, gzip, hashlib, json, os, urllib.request
+          import base64, gzip, hashlib, json, os, re, subprocess, urllib.request, urllib.parse
           from pathlib import Path
-          blobs = {
-            'hydrology-1337': '102e648aed56aa7a4748c097024482819a41fc38',
-            'hydrology-801086821803359396': 'bca3ddb03b5b81c4d8ef2abe246c8419637acb69',
-            'technical-build': '1bb1fb914362829609cd2039073e69d63167a63d'
-          }
-          root = Path('morphology-evidence'); root.mkdir()
+          root = Path('morphology-resume'); root.mkdir()
+          source = '306eb43e5af8b1ee2d73ffe383c3ebf448cd6cf3'
+          run = 43421075905
+          for label, sha in [('morphology', source), ('surface-fix', '0eb0522898fc805c96e07566a76134411334b581'), ('main', 'e729fc9114c8e2292918e0d6f6727ad128fd702b')]:
+              subprocess.run(['git', 'archive', '--format=tar.gz', '--output='+str(root / (label+'.tar.gz')), sha], check=True)
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  result = super().redirect_request(req, fp, code, msg, headers, newurl)
+                  if result and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+                      result.remove_header('Authorization')
+                  return result
+          opener = urllib.request.build_opener(SafeRedirect())
+          def get(path, binary=False):
+              req = urllib.request.Request('https://api.github.com/repos/'+os.environ['REPO']+path,
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+              with opener.open(req, timeout=90) as response: data = response.read(80000000)
+              return data if binary else json.loads(data)
+          jobs = get('/actions/runs/'+str(run)+'/jobs?per_page=100')['jobs']
           index = []
-          for label, sha in blobs.items():
-              url = 'https://api.github.com/repos/' + os.environ['REPO'] + '/git/blobs/' + sha
-              request = urllib.request.Request(url, headers={
-                  'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-                  'Accept': 'application/vnd.github+json'})
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  item = json.loads(response.read(20000000))
-              raw = base64.b64decode(item['content'])
-              assert hashlib.sha1(('blob ' + str(len(raw)) + '\0').encode() + raw).hexdigest() == sha
-              bundle = json.loads(gzip.decompress(raw))
-              assert bundle['identity']['GITHUB_SHA'] == '15a13eb53107f559240dc6fc4cf1b8db406fb5d7'
-              assert bundle['identity']['GITHUB_RUN_ID'] == '43419121308'
-              folder = root / label; folder.mkdir()
-              (folder / 'identity.json').write_text(json.dumps(bundle['identity'], indent=2))
-              for name, entry in bundle['files'].items():
-                  path = Path(name)
-                  assert not path.is_absolute() and '..' not in path.parts
-                  data = base64.b64decode(entry['content'])
-                  assert hashlib.sha256(data).hexdigest() == entry['sha256'], name
-                  target = folder / path; target.parent.mkdir(parents=True, exist_ok=True)
-                  target.write_bytes(data)
-              index.append({'name': label, 'blob': sha, 'files': len(bundle['files'])})
-          (root / 'index.json').write_text(json.dumps(index, indent=2))
-          print('VERIFIED_MORPHOLOGY_REGRESSION_EVIDENCE', json.dumps(index))
+          for job in jobs:
+              if job['conclusion'] not in ('success','failure'): continue
+              folder = root / str(job['id']); folder.mkdir()
+              log = get('/actions/jobs/'+str(job['id'])+'/logs', True).decode('utf-8-sig')
+              (folder/'job.log').write_text(log)
+              matches = re.findall(r'CI_EVIDENCE_STORED (\{[^\n]+\})', log)
+              errors = [line for line in log.splitlines() if 'ValueError:' in line or 'AssertionError:' in line]
+              print(job['name'], job['conclusion'], errors)
+              entry = {'job':job['name'], 'id':job['id'], 'conclusion':job['conclusion'], 'errors':errors}
+              if matches:
+                  stored = json.loads(matches[-1]); sha = stored['blob']
+                  item = get('/git/blobs/'+sha)
+                  raw = base64.b64decode(item['content'])
+                  assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest() == sha
+                  bundle = json.loads(gzip.decompress(raw))
+                  assert bundle['identity']['GITHUB_SHA'] == source
+                  assert bundle['identity']['GITHUB_RUN_ID'] == str(run)
+                  (folder/'identity.json').write_text(json.dumps(bundle['identity'],indent=2))
+                  for name, file in bundle['files'].items():
+                      path = Path(name); assert not path.is_absolute() and '..' not in path.parts
+                      data = base64.b64decode(file['content'])
+                      assert hashlib.sha256(data).hexdigest() == file['sha256'], name
+                      target = folder/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(data)
+                  entry.update(blob=sha, files=len(bundle['files']))
+              index.append(entry)
+          (root/'index.json').write_text(json.dumps(index,indent=2))
+          (root/'source.json').write_text(json.dumps({'commit':source,'run':run},indent=2))
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: morphology-regression-15a13eb
-          path: morphology-evidence/
+          name: morphology-resume-306eb43
+          path: morphology-resume/
           if-no-files-found: error
           compression-level: 6
           retention-days: 3
