@@ -22,9 +22,19 @@ jobs:
           repo='jumonja-maker/FreshGenerator-GenWorkWorld'
           parent='6449741860fb0e8daf87ebaad3537b6b2211b5eb'
           assert os.environ['GITHUB_REPOSITORY']==repo
-          subprocess.run(['git','checkout','--detach',parent],check=True)
-          patch=gzip.decompress(base64.b64decode('H4sIAAAAAAAC/+V9a3MbR5Lgd/2KGkzcCTAbTTxIgBQthykKlOgVH0FSHnu8DriBLpA9anTjuht8aKwIS/asZ9fedXjjHhv32I257xdBy5JNy5L84f4A+Rful1xmVlW/8SDF2ccdHSaB7qqsrHxnVnbLtHo9Vi7vWQEzZk2368/uH5uea7t7x2WTO74VHJe7Rneflyt6XV/Q+ybrTDfumsMPWc+yOeu7JmfVSqUxN3fNckx+xCriR9cX58x6dWH+WrlcZrMmP5h1hrZ9bWZmZupV3n2XlStahc1Utfo8e/fdazO/ZnTzBjv75ez12dPzJ2evzz87ewWfn7Oz0/PHdPnn86/PfsTbZydw6xRv/XL2M4x8giPPH8Pf52c/sbPv4M+PMA0Gv4SPr+j/0/Nv2Nn38PE1Xjx/AuBPz06vzVybOfsW4P14dnKDfQK7XWzOVRcalV6nwhdMo7fUMOvz9Wan0anVqtXOPO98orGtbfZ/vvjPDZ2d/S/EFlABiK/PniGeZz+IJRHDF4TsM/jy7OwERp5oDDFiMO6X888B15/h1otwV6/Ov8ItIUsMMH5MPbDVVRQ=='))
+          def request(endpoint,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+endpoint,data=data,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
+          chunks=[]
+          for sha in ['c613306dacc35848c169574bc3d41db87ec40862','4ef82a484de4d065cb3232370539a69dc2d245f2','f15e30bc090c8ee720ef8e41af65c468ea61f660','7e4ae3c60e6602f3c34dc5425c1c1b6f3b2e187b']:
+              blob=request('/git/blobs/'+sha)
+              raw=base64.b64decode(blob['content'])
+              assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
+              chunks.append(raw)
+          patch=gzip.decompress(base64.b64decode(b''.join(chunks)))
           assert hashlib.sha256(patch).hexdigest()=='05af49a24ded6fc47d6d716496927488bdc11bd362c15dee8cea54e24dbea37d'
+          subprocess.run(['git','checkout','--detach',parent],check=True)
           subprocess.run(['git','apply','--check','-'],input=patch,check=True)
           subprocess.run(['git','apply','-'],input=patch,check=True)
           expected={
@@ -40,14 +50,11 @@ jobs:
           for path,sha in expected.items(): assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==sha,path
           subprocess.run(['git','diff','--check'],check=True)
           subprocess.run(['python3','scripts/test_hydrology_density_cache.py'],check=True)
-          def post(endpoint,body):
-              req=urllib.request.Request('https://api.github.com/repos/'+repo+endpoint,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
-              with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
           entries=[]
           for path in expected:
-              blob=post('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
+              blob=request('/git/blobs',{'content':Path(path).read_text(),'encoding':'utf-8'})
               entries.append({'path':path,'mode':'100644','type':'blob','sha':blob['sha']})
-          tree=post('/git/trees',{'base_tree':'60789e8ac6deb080b670b22375bac27b138fbfb1','tree':entries})
-          commit=post('/git/commits',{'message':'perf: reuse exact shared native surface and cave densities\n\nAdd only native per-context caches around the reviewed surface cap and unchanged native cave body. No resampling, arithmetic reordering, seed, river geometry or runtime class changes. Tight packaged checks require both exact wrappers.\n\n318 real-API Java and 196 Python tests pass locally. Five native Minecraft seeds match 1292800 float-bit comparisons including point/volume reuse, mixed and parallel contexts. Make the equivalence verifier mandatory in the structural audit; retain adversarial checks for one-ULP changes, signed zero and non-finite values.\n\nPreliminary isolated ABBA on 288 FULL chunks: 36.606s before vs30.405s after (-16.9%) in this sample, not FPS or universal performance proof. Full canonical CI and final paired measurements remain required. Main is not changed.','tree':tree['sha'],'parents':[parent]})
+          tree=request('/git/trees',{'base_tree':'60789e8ac6deb080b670b22375bac27b138fbfb1','tree':entries})
+          commit=request('/git/commits',{'message':'perf: reuse exact shared native surface and cave densities\n\nAdd only native per-context caches around the reviewed surface cap and unchanged native cave body. No resampling, arithmetic reordering, seed, river geometry or runtime class changes. Tight packaged checks require both exact wrappers.\n\n318 real-API Java and 196 Python tests pass locally. Five native Minecraft seeds match 1292800 float-bit comparisons including point/volume reuse, mixed and parallel contexts. Make the equivalence verifier mandatory in the structural audit; retain adversarial checks for one-ULP changes, signed zero and non-finite values.\n\nPreliminary isolated ABBA on 288 FULL chunks: 36.606s before vs30.405s after (-16.9%) in this sample, not FPS or universal performance proof. Full canonical CI and final paired measurements remain required. Main is not changed.','tree':tree['sha'],'parents':[parent]})
           print('FRESHGENERATOR_PREPARED_CACHE_COMMIT',commit['sha'])
           print('VERIFIED_FILE_SHA256',json.dumps(expected,sort_keys=True))
