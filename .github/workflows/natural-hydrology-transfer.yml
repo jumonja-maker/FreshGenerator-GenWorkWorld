@@ -43,6 +43,12 @@ jobs:
               path = work / name
               assert not path.is_symlink() and path.is_file()
               assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
+          # GITHUB_TOKEN has contents permission, not workflows permission.
+          # Keep the original workflow; it will be updated separately through
+          # the authorized connector, not through this restricted runner token.
+          workflow = '.github/workflows/build.yml'
+          git('restore', '--source=' + base, '--', workflow)
+          manifest.pop(workflow)
           git('diff', '--check')
           git('config', 'user.name', 'github-actions[bot]')
           git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
