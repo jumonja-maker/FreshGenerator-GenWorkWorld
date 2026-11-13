@@ -1,6 +1,7 @@
 package dev.freshgenerator.core;
 
 import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
@@ -26,11 +27,21 @@ public final class DrainageModel {
     // Shared edges include a one-block apron for the dry banks.
     private static final int SIDE = TILE_SIZE + 3;
     private static final int REACH_MARGIN = 3;
+    // The published coherent exterior approaches 304 from below. This is an
+    // elevation-domain boundary, not a traversal-distance or catchment cutoff.
+    static final float MAX_CHANNEL_ELEVATION = 304;
+    private static final int NO_CHANNEL = 1, CHANNEL = 2;
 
     private final long seed;
     private final int sea;
     private final Supplier<Fields> fields;
     private final Tiles<Grid> grids = new Tiles<>(512, this::buildGrid);
+    // Completed channel certificates are much smaller than sampled terrain.
+    // Keep at most 4096 x 64 integer decisions (~1 MiB of primitive payload),
+    // separate from the unchanged terrain cache. This avoids rewalking a long
+    // featureless slope whenever a terrain tile is evicted.
+    private final Tiles<AtomicIntegerArray> channels = new Tiles<>(4096,
+            (x, z) -> new AtomicIntegerArray(CELLS * CELLS));
     private final Tiles<List<DrainageBasin>> basins = new Tiles<>(256, this::buildBasins);
     private final Tiles<Tile> rasters = new Tiles<>(128, this::buildTile);
 
@@ -230,26 +241,20 @@ public final class DrainageModel {
         Fields samples = fields.get();
         Raster raster = new Raster(tx * TILE_SIZE - 1, tz * TILE_SIZE - 1, samples.terrain, sea);
         Map<Long, Direction> tangents = new HashMap<>();
-        Map<Long, Float> confinement = new HashMap<>();
         int gx0 = tx * CELLS, gz0 = tz * CELLS;
         long[] pending = new long[MAX_FLOW];
         for (int gz = gz0 - REACH_MARGIN; gz <= gz0 + CELLS + REACH_MARGIN; gz++) {
             for (int gx = gx0 - REACH_MARGIN; gx <= gx0 + CELLS + REACH_MARGIN; gx++) {
                 Cell start = cell(gx, gz);
-                if (start.ocean || start.receiver == NO_CELL) continue;
+                if (start.receiver == NO_CELL || !channel(start, samples.terrain, pending)) continue;
                 int flow = flow(start.key, pending, true);
                 Cell end = cell(start.receiver);
                 int nextFlow = end.ocean ? flow : flow(end.key, pending, true);
-                if (nextFlow < MIN_FLOW) continue;
-                float ca = confinement.computeIfAbsent(start.key, k -> confinement(start, samples.terrain));
-                float cb = end.ocean || end.receiver == NO_CELL ? ca
-                        : confinement.computeIfAbsent(end.key, k -> confinement(end, samples.terrain));
-                if (Math.max(ca, cb) == 0) continue;
-                Direction ta = tangents.computeIfAbsent(start.key, k -> tangent(start, pending));
-                Direction tb = end.ocean || end.receiver == NO_CELL ? Direction.between(start, end)
-                        : tangents.computeIfAbsent(end.key, k -> tangent(end, pending));
+                Direction ta = tangents.computeIfAbsent(start.key, k -> tangent(start, samples.terrain, pending));
+                Direction tb = end.receiver == NO_CELL ? Direction.between(start, end)
+                        : tangents.computeIfAbsent(end.key, k -> tangent(end, samples.terrain, pending));
                 raster.reach(start, end, riverLevel(start), riverLevel(end), flow, nextFlow,
-                        Curve.between(start, end, ta, tb), ca, cb);
+                        Curve.between(start, end, ta, tb), 1, 1);
             }
         }
         int extent = DrainageBasin.SEARCH + REACH_MARGIN + 1;
@@ -277,6 +282,99 @@ public final class DrainageModel {
         return raster.finish();
     }
 
+    /** Confinement initiates a river; it cannot erase an existing upstream river.
+     * Compute the monotone OR of eligible headwaters over the same single-receiver
+     * DAG as discharge. No nine-step (or other distance) cutoff is used. Positive
+     * discharge and the strictly increasing upstream elevation make the search
+     * finite in the coherent exterior's bounded elevation domain. A stack, not
+     * Java recursion, handles long paths. Only completed decisions enter the
+     * bounded grid cache, so eviction/order/concurrency cannot change the answer.
+     */
+    private boolean channel(Cell start, Field terrain, long[] flowQueue) {
+        ChannelFrame root = new ChannelFrame(start);
+        int initial = channelDecision(root, terrain, flowQueue);
+        if (initial != 0) return initial == CHANNEL;
+        var stack = new ArrayDeque<ChannelFrame>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            ChannelFrame frame = stack.peek();
+            Cell upstream = frame.nextUpstream();
+            if (upstream == null) {
+                frame.complete(NO_CHANNEL);
+                stack.pop();
+                continue;
+            }
+            if (upstream.height <= frame.node.height) {
+                throw new IllegalStateException("A channel's upstream edge must gain elevation");
+            }
+            ChannelFrame next = new ChannelFrame(upstream);
+            int decision = channelDecision(next, terrain, flowQueue);
+            if (decision == CHANNEL) {
+                for (ChannelFrame ancestor : stack) ancestor.complete(CHANNEL);
+                return true;
+            }
+            if (decision == 0) stack.push(next);
+        }
+        return false;
+    }
+
+    private int channelDecision(ChannelFrame frame, Field terrain, long[] pending) {
+        int known = frame.owner.get(frame.slot);
+        if (known != 0) return known;
+        Cell node = frame.node;
+        if (node.ocean || node.height >= MAX_CHANNEL_ELEVATION
+                || flow(node.key, pending, true) < MIN_FLOW) return frame.complete(NO_CHANNEL);
+        if (node.receiver != NO_CELL && confinement(node, terrain) > 0.08f)
+            return frame.complete(CHANNEL);
+        if (node.receiver == NO_CELL) {
+            // A real throughflow lake is also a source. A dry sub-grid bypass
+            // is not: it must inherit an actual upstream channel instead.
+            for (DrainageBasin basin : basins.get(Math.floorDiv(x(node.key), CELLS),
+                    Math.floorDiv(z(node.key), CELLS))) {
+                if (basin.center().key == node.key && basin.outlet() != NO_CELL && !basin.footprint().isEmpty())
+                    return frame.complete(CHANNEL);
+            }
+        }
+        return 0;
+    }
+
+    private final class ChannelFrame {
+        final Cell node;
+        final AtomicIntegerArray owner;
+        final int slot;
+        private int neighbour;
+        private List<Cell> spills;
+        private int spill;
+        ChannelFrame(Cell node) {
+            this.node = node;
+            int gx = x(node.key), gz = z(node.key);
+            owner = channels.get(Math.floorDiv(gx, CELLS), Math.floorDiv(gz, CELLS));
+            slot = Math.floorMod(gz, CELLS) * CELLS + Math.floorMod(gx, CELLS);
+        }
+        int complete(int decision) {
+            owner.compareAndSet(slot, 0, decision);
+            return decision;
+        }
+        Cell nextUpstream() {
+            int gx = x(node.key), gz = z(node.key);
+            while (neighbour < 9) {
+                int i = neighbour++;
+                if (i == 4) continue;
+                Cell other = cell(gx + i % 3 - 1, gz + i / 3 - 1);
+                if (other.receiver == node.key) return other;
+            }
+            if (spills == null) {
+                spills = new ArrayList<>();
+                int radius = DrainageBasin.SEARCH;
+                for (int tz = Math.floorDiv(gz - radius, CELLS); tz <= Math.floorDiv(gz + radius, CELLS); tz++)
+                    for (int tx = Math.floorDiv(gx - radius, CELLS); tx <= Math.floorDiv(gx + radius, CELLS); tx++)
+                        for (DrainageBasin basin : basins.get(tx, tz))
+                            if (basin.outlet() == node.key) spills.add(basin.center());
+            }
+            return spill < spills.size() ? spills.get(spill++) : null;
+        }
+    }
+
     /** Both sides must rise; a tilted plane is not a valley. The two scales
      * distinguish a confined drainage corridor from arbitrary D8 sheet-flow lines.
      * No randomness or tile-relative coordinates enter this decision. */
@@ -298,7 +396,7 @@ public final class DrainageModel {
 
     /** A shared main-stem tangent at a graph node, rather than independently
      * bending every 16-block link. Tributaries join the same downstream point. */
-    private Direction tangent(Cell node, long[] pending) {
+    private Direction tangent(Cell node, Field terrain, long[] pending) {
         if (node.receiver == NO_CELL) return new Direction(1, 0);
         Cell next = cell(node.receiver);
         Cell upstream = null;
@@ -308,7 +406,7 @@ public final class DrainageModel {
             for (int dx = -1; dx <= 1; dx++) {
                 if ((dx | dz) == 0) continue;
                 Cell other = cell(gx + dx, gz + dz);
-                if (other.receiver != node.key) continue;
+                if (other.receiver != node.key || !channel(other, terrain, pending)) continue;
                 int q = flow(other.key, pending, false);
                 if (q > largest || (q == largest && upstream != null && other.key < upstream.key)) {
                     largest = q;

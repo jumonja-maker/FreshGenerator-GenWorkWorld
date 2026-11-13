@@ -35,7 +35,7 @@ RUNTIME = {"dev/freshgenerator/" + name + ".class" for name in (
     "core/DrainageModel", "core/DrainageModel$Field", "core/DrainageModel$Fields",
     "core/DrainageModel$Tile", "core/DrainageModel$Grid", "core/DrainageModel$Cell",
     "core/DrainageModel$Raster", "core/DrainageModel$Tiles", "core/DrainageModel$Tiles$Entry",
-    "core/DrainageModel$TileFactory", "core/DrainageModel$Direction", "core/DrainageModel$Curve", "core/DrainageBasin", "core/DrainageBasin$Spill",
+    "core/DrainageModel$TileFactory", "core/DrainageModel$ChannelFrame", "core/DrainageModel$Direction", "core/DrainageModel$Curve", "core/DrainageBasin", "core/DrainageBasin$Spill",
     "core/DrainageBasin$Visit", "hydrology/DrainageDensity", "hydrology/DrainageDensity$Sampler",
     "hydrology/DrainageDensity$OriginalHeight", "hydrology/DrainageDensity$OriginalHeight$Corner",
     "hydrology/HydrologyInitializer", "hydrology/HydrologyAccess", "hydrology/HydrologyAquifer",

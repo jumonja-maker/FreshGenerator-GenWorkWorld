@@ -1,6 +1,7 @@
 package dev.freshgenerator.core;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.PriorityQueue;
@@ -159,6 +160,38 @@ record DrainageBasin(Cell center, int top, BitSet footprint, long[] path, int sa
             }
             path[index] = key;
         }
-        return new Spill(outlet.level, path, saddle);
+        return new Spill(outlet.level, downhillTail(model, path, saddle), saddle);
+    }
+
+    /** Minimax search certifies the crest but its equal-cost index tie-break can
+     * wander back uphill after it. Prefer the already defined natural receiver
+     * chain as soon as it certifies a lower outlet inside that same search window.
+     * Keep the certified path when natural drainage leads back into the basin.
+     * This changes no saddle level, adds no outlet and performs no unbounded walk.
+     */
+    private static long[] downhillTail(DrainageModel model, long[] path, int saddle) {
+        Cell center = model.cell(path[0]);
+        int gx = x(center.key()), gz = z(center.key());
+        for (int start = saddle; start < path.length - 1; start++) {
+            var tail = new ArrayList<Long>();
+            Cell current = model.cell(path[start]);
+            while (true) {
+                // Search boundaries cannot certify an exit: use the original path.
+                if (Math.abs(x(current.key()) - gx) >= SEARCH || Math.abs(z(current.key()) - gz) >= SEARCH)
+                    break;
+                tail.add(current.key());
+                if (current.height() < center.height() - 0.55f) {
+                    long[] result = Arrays.copyOf(path, start + tail.size());
+                    for (int i = 0; i < tail.size(); i++) result[start + i] = tail.get(i);
+                    return result;
+                }
+                if (current.receiver() == NO_CELL) break;
+                Cell next = model.cell(current.receiver());
+                if (!(next.height() < current.height()))
+                    throw new IllegalStateException("Natural spill descent must lose elevation");
+                current = next;
+            }
+        }
+        return path;
     }
 }
